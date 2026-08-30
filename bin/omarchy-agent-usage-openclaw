@@ -1,0 +1,687 @@
+#!/usr/bin/env python3
+"""Collect OpenClaw usage into one display-ready JSON record for the
+omarchy agents panel.
+
+Local stats come from:
+  - ~/.openclaw/identity/device.json (installed marker)
+  - ~/.openclaw/tui/last-session.json (current session metadata)
+  - ~/.openclaw/crestodian/sessions/*.trajectory.jsonl (token usage per step)
+  - ~/.openclaw/.env (auth-help text when API key missing)
+
+Live checks come from:
+  - command -v openclaw (install detection)
+  - openclaw --version (version string)
+  - systemctl --user is-active openclaw-gateway.service (gateway state)
+
+Output schema matches what the omarchy agents panel reads.
+"""
+# omarchy:summary=Print the OpenClaw usage record as JSON
+# omarchy:args=[--force] [--limits-only]
+# omarchy:hidden=true
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+AGENT_ID = "openclaw"
+AGENT_NAME = "OpenClaw"
+AUTH_HELP_EMPTY_ENV = r"Run `openclaw onboard` to configure your OpenClaw API keys."
+AUTH_HELP_NO_GATEWAY = "Start the gateway: openclaw gateway start --foreground"
+SAFE_IO_PATH = Path(__file__).resolve().parent / "omarchy-safe-io"
+USAGE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "omarchy" / "agents" / "usage"
+USAGE_FILE = USAGE_DIR / f"{AGENT_ID}.json"
+STATE_FILE = USAGE_DIR / f"{AGENT_ID}.state.json"
+TRAJECTORY_DIR = Path.home() / ".openclaw" / "crestodian" / "sessions"
+DEVICE_FILE = Path.home() / ".openclaw" / "identity" / "device.json"
+LAST_SESSION_FILE = Path.home() / ".openclaw" / "tui" / "last-session.json"
+ENV_FILE = Path.home() / ".openclaw" / ".env"
+SCAN_LIMIT_BYTES = 16 * 1024 * 1024  # per file (was 262144; bumped so 1MB+ trajectory files are readable)
+SCAN_TOTAL_LIMIT_BYTES = 8 * 1024 * 1024  # aggregate cap across all trajectory files
+SUBPROCESS_TIMEOUT_SECONDS = 5
+SUBPROCESS_OUTPUT_LIMIT = 4096
+
+
+def _humanize_seconds(total_seconds) -> str:
+    """Compact 'Nd Nh' / 'Nh Nm' / 'Nm' representation for display."""
+    if total_seconds is None or total_seconds <= 0:
+        return "—"
+    seconds = int(total_seconds)
+    days = seconds // 86400
+    hours = (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+    if days > 0:
+        return f"{days}d {hours}h"
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    if minutes > 0:
+        return f"{minutes}m"
+    return f"{seconds}s"
+
+
+
+
+
+
+def now_local() -> dt.datetime:
+    return dt.datetime.now()
+
+
+def local_date_string(value: dt.date) -> str:
+    return value.strftime("%Y-%m-%d")
+
+
+def recent_date_strings() -> list[str]:
+    today = now_local().date()
+    return [local_date_string(today - dt.timedelta(days=offset)) for offset in range(6, -1, -1)]
+
+
+def safe_run(timeout_seconds: float, limit: int, command: list[str]) -> str:
+    """Bounded subprocess wrapper, delegates to omarchy-safe-io."""
+    if not SAFE_IO_PATH.exists():
+        return ""
+    try:
+        result = subprocess.run(
+            [str(SAFE_IO_PATH), "run", str(timeout_seconds), str(limit), "--", *command],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds + 2,
+        )
+        return result.stdout if result.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def safe_read(path: Path, limit: int) -> str:
+    """Bounded regular-file read, delegates to omarchy-safe-io."""
+    if not path.exists() or not SAFE_IO_PATH.exists():
+        return ""
+    try:
+        result = subprocess.run(
+            [str(SAFE_IO_PATH), "read", str(limit), str(path)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.stdout if result.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def safe_read_json(path: Path, limit: int) -> dict:
+    raw = safe_read(path, limit)
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def detect_installed() -> tuple[bool, str]:
+    """Return (installed, version) for the openclaw CLI."""
+    binary = shutil.which("openclaw")
+    if not binary:
+        return False, ""
+    output = safe_run(SUBPROCESS_TIMEOUT_SECONDS, SUBPROCESS_OUTPUT_LIMIT, [binary, "--version"])
+    if not output:
+        return True, ""
+    first_line = output.splitlines()[0] if output.splitlines() else ""
+    return True, first_line[:256]
+
+
+def detect_gateway_state() -> str:
+    """active | stopped | not-installed | unknown."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "is-active", "openclaw-gateway.service"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if result.returncode == 0 and "active" in result.stdout:
+            return "active"
+    except Exception:
+        pass
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "is-enabled", "openclaw-gateway.service"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if result.returncode == 0:
+            return "stopped"
+    except Exception:
+        pass
+    return "not-installed"
+
+
+def detect_gateway_started_at() -> str:
+    """ISO timestamp when the gateway service entered active state, or empty string."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "show", "openclaw-gateway.service",
+             "--property=ActiveEnterTimestamp", "--value"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode == 0:
+            ts = result.stdout.strip()
+            if ts and ts != "n/a":
+                return ts
+    except Exception:
+        pass
+    return ""
+
+
+def detect_node_version() -> str:
+    """Node.js version (e.g., 'Node v26.7.0')."""
+    try:
+        node_bin = shutil.which("node")
+        if not node_bin:
+            return ""
+        result = subprocess.run(
+            [node_bin, "--version"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode == 0:
+            v = result.stdout.strip()
+            # "v26.7.0" → "Node v26.7.0"
+            if not v.startswith("v"):
+                return f"Node {v}"
+            return f"Node {v}"
+    except Exception:
+        pass
+    return ""
+
+
+def detect_openclaw_pid() -> str:
+    """PID of the OpenClaw CLI/gateway process, or empty string."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "openclaw"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode == 0:
+            pids = result.stdout.strip().split()
+            # Prefer the gateway process
+            for pid in pids:
+                try:
+                    with open(f"/proc/{pid}/cmdline", "r") as f:
+                        cmdline = f.read()
+                        if "gateway" in cmdline or "tui" in cmdline:
+                            return str(pid)
+                except Exception:
+                    continue
+            return pids[0] if pids else ""
+    except Exception:
+        pass
+    return ""
+
+
+def detect_openclaw_uptime() -> str:
+    """Human-readable uptime of the OpenClaw gateway service (e.g., '14h', '2d 3h')."""
+    try:
+        # Get gateway start time
+        result = subprocess.run(
+            ["systemctl", "--user", "show", "openclaw-gateway.service",
+             "--property=ActiveEnterTimestamp", "--value"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode != 0:
+            return ""
+        ts_str = result.stdout.strip()
+        if not ts_str or ts_str == "n/a":
+            return ""
+        # Parse the timestamp: "Sat 2026-08-29 02:45:58 EDT"
+        from datetime import datetime
+        ts_clean = ts_str.rsplit(" ", 1)[0]  # strip timezone abbreviation
+        try:
+            start = datetime.strptime(ts_clean, "%a %Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return ""
+        now = datetime.now()
+        delta = now - start
+        total_seconds = int(delta.total_seconds())
+        if total_seconds < 0:
+            return ""
+        days = total_seconds // 86400
+        hours = (total_seconds % 86400) // 3600
+        minutes = (total_seconds % 3600) // 60
+        if days > 0:
+            return f"{days}d {hours}h"
+        if hours > 0:
+            return f"{hours}h {minutes}m"
+        if minutes > 0:
+            return f"{minutes}m"
+        return f"{total_seconds}s"
+    except Exception:
+        pass
+    return ""
+
+
+def detect_discord_status() -> str:
+    """Discord connection status: 'active' if Discord process running, 'not running' otherwise."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "discord"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # Check if it's actually the Discord app (not some other thing matching "discord")
+            for pid in result.stdout.strip().split():
+                try:
+                    with open(f"/proc/{pid}/cmdline", "r") as f:
+                        cmdline = f.read()
+                        if "discord" in cmdline.lower():
+                            return "active"
+                except Exception:
+                    continue
+            return "active"
+        return "not running"
+    except Exception:
+        pass
+    return "unknown"
+
+
+def parse_trajectory_date(ts_value: str) -> str:
+    """Extract YYYY-MM-DD from a trajectory timestamp (ISO 8601 UTC)."""
+    if not ts_value or not isinstance(ts_value, str):
+        return ""
+    if len(ts_value) >= 10 and ts_value[4] == "-" and ts_value[7] == "-":
+        return ts_value[:10]
+    return ""
+
+
+def aggregate_trajectory() -> dict:
+    """Walk all trajectory JSONL files; aggregate tokens by date + model."""
+    today_local = now_local().date().isoformat()
+
+    today_total = 0
+    today_by_model: dict[str, int] = defaultdict(int)
+    today_sessions: set[str] = set()
+    today_user_prompts = 0
+
+    total_by_model: dict[str, int] = defaultdict(int)
+    total_sessions: set[str] = set()
+    total_user_prompts = 0
+
+    recent_by_day: dict[str, int] = defaultdict(int)        # tokens per day (Panel.qml renders)
+    message_count_by_day: dict[str, int] = defaultdict(int) # events per day (legacy field)
+    provider = ""
+    model_id = ""
+
+    # Per-model breakdowns matching Omarchy's Panel.qml field names exactly:
+    input_by_model: dict[str, int] = defaultdict(int)
+    output_by_model: dict[str, int] = defaultdict(int)
+    cache_read_by_model: dict[str, int] = defaultdict(int)
+    cache_write_by_model: dict[str, int] = defaultdict(int)
+    calls_by_model: dict[str, int] = defaultdict(int)
+
+    if not TRAJECTORY_DIR.is_dir():
+        return _aggregate_result(today_total, today_by_model, today_sessions, today_user_prompts,
+                                 total_by_model, total_sessions, total_user_prompts,
+                                 recent_by_day, provider, model_id, today_local)
+
+    total_bytes_read = 0
+    trajectory_files = sorted(TRAJECTORY_DIR.glob("*.trajectory.jsonl"))
+
+    for path in trajectory_files:
+        if total_bytes_read >= SCAN_TOTAL_LIMIT_BYTES:
+            break
+        raw = safe_read(path, SCAN_LIMIT_BYTES)
+        if not raw:
+            continue
+        total_bytes_read += len(raw)
+
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(entry, dict):
+                continue
+
+            ts = entry.get("ts", "")
+            date_str = parse_trajectory_date(ts) if isinstance(ts, str) else ""
+            is_today = (date_str == today_local)
+
+            if not provider:
+                p = entry.get("provider", "")
+                if isinstance(p, str) and p:
+                    provider = p
+            if not model_id:
+                m = entry.get("modelId", "")
+                if isinstance(m, str) and m:
+                    model_id = m
+
+            session_id = entry.get("sessionId", "")
+            if isinstance(session_id, str) and session_id:
+                total_sessions.add(session_id)
+                if is_today:
+                    today_sessions.add(session_id)
+
+            entry_type = entry.get("type", "")
+
+            if entry_type == "model.completed":
+                data = entry.get("data") or {}
+                if not isinstance(data, dict):
+                    continue
+                usage = data.get("usage") or {}
+                if not isinstance(usage, dict):
+                    continue
+                total_tokens = usage.get("total") or 0
+                if not isinstance(total_tokens, (int, float)) or total_tokens <= 0:
+                    continue
+                mid = entry.get("modelId") or "unknown"
+                if not isinstance(mid, str):
+                    mid = "unknown"
+
+                # Per-day aggregates (Panel.qml chart expects per-day tokens)
+                if date_str:
+                    recent_by_day[date_str] += int(total_tokens)
+                    message_count_by_day[date_str] += 1
+
+                # Per-model breakdowns (Panel.qml expects inputTokens/outputTokens/
+                # cacheReadInputTokens/cacheWriteInputTokens — see Panel.qml lines 237-243)
+                input_t = usage.get("input") or 0
+                output_t = usage.get("output") or 0
+                cache_read_t = usage.get("cacheRead") or 0
+                cache_write_t = usage.get("cacheWrite") or 0
+                _to_int = lambda v: int(v) if isinstance(v, (int, float)) else 0
+                input_by_model[mid] += _to_int(input_t)
+                output_by_model[mid] += _to_int(output_t)
+                cache_read_by_model[mid] += _to_int(cache_read_t)
+                cache_write_by_model[mid] += _to_int(cache_write_t)
+                calls_by_model[mid] += 1
+
+                total_by_model[mid] += int(total_tokens)
+                if is_today:
+                    today_total += int(total_tokens)
+                    today_by_model[mid] += int(total_tokens)
+
+            if entry_type == "user_prompt" or entry_type == "user_prompted":
+                total_user_prompts += 1
+                if is_today:
+                    today_user_prompts += 1
+
+    return _aggregate_result(today_total, today_by_model, today_sessions, today_user_prompts,
+                             total_by_model, total_sessions, total_user_prompts,
+                             recent_by_day, message_count_by_day,
+                             input_by_model, output_by_model,
+                             cache_read_by_model, cache_write_by_model, calls_by_model,
+                             provider, model_id, today_local)
+
+
+def _aggregate_result(today_total, today_by_model, today_sessions, today_user_prompts,
+                     total_by_model, total_sessions, total_user_prompts,
+                     recent_by_day, message_count_by_day,
+                     input_by_model, output_by_model,
+                     cache_read_by_model, cache_write_by_model, calls_by_model,
+                     provider, model_id, today_local):
+    """Build the final aggregated dict from collected counters.
+
+    Output schema matches Omarchy's Panel.qml field names exactly
+    (inputTokens / outputTokens / cacheReadInputTokens / cacheWriteInputTokens).
+    """
+    active_dates = sorted(d for d, c in recent_by_day.items() if c > 0)
+    recent_days = []
+    for d_str in recent_date_strings():
+        recent_days.append({
+            "date": d_str,
+            "tokens": recent_by_day.get(d_str, 0),
+            "messageCount": message_count_by_day.get(d_str, 0),
+        })
+
+    # Panel.qml-compatible modelUsage: inputTokens/outputTokens/cacheReadInputTokens/cacheWriteInputTokens
+    all_models = set(total_by_model.keys()) | set(calls_by_model.keys())
+    model_usage: dict[str, dict] = {}
+    for m in all_models:
+        model_usage[m] = {
+            "provider": provider or "",
+            "inputTokens": int(input_by_model.get(m, 0)),
+            "outputTokens": int(output_by_model.get(m, 0)),
+            "cacheReadInputTokens": int(cache_read_by_model.get(m, 0)),
+            "cacheWriteInputTokens": int(cache_write_by_model.get(m, 0)),
+            "tokens": int(total_by_model.get(m, 0)),
+            "calls": int(calls_by_model.get(m, 0)),
+        }
+
+    # Compute top-level bar metrics (so Panel.qml doesn't need JS functions)
+    total_cache = sum(int(cache_read_by_model.get(m, 0)) for m in total_by_model)
+    total_input_all = sum(int(input_by_model.get(m, 0)) for m in total_by_model)
+    cache_denominator = total_input_all + total_cache
+    cache_ratio = round(total_cache / cache_denominator, 3) if cache_denominator > 0 else 0
+    total_tokens_all = sum(int(total_by_model.get(m, 0)) for m in total_by_model)
+    total_calls_all = sum(int(calls_by_model.get(m, 0)) for m in total_by_model)
+    avg_context = round(total_tokens_all / total_calls_all) if total_calls_all > 0 else 0
+
+    return {
+        "todayTotalTokens": int(today_total),
+        "todayTokensByModel": dict(today_by_model),
+        "todayPrompts": int(today_user_prompts),
+        "todaySessions": len(today_sessions),
+        "totalPrompts": int(total_user_prompts),
+        "totalSessions": len(total_sessions),
+        "activeDays": len(active_dates),
+        "activeDates": active_dates,
+        "recentDays": recent_days,
+        "modelUsage": model_usage,
+        "provider": provider,
+        "modelId": model_id,
+        "todayLocalDate": today_local,
+        "cacheRatio": cache_ratio,
+        "avgContext": avg_context,
+    }
+
+
+def read_last_session() -> tuple[str, str, int]:
+    """Read last-session.json (map of sessionId -> {sessionKey, updatedAt})
+    and return the most-recently-updated session."""
+    raw = safe_read(LAST_SESSION_FILE, 65536)
+    if not raw:
+        return "", "", 0
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return "", "", 0
+    if not isinstance(data, dict) or not data:
+        return "", "", 0
+    most_recent_id = ""
+    most_recent_updated = 0
+    for sid, meta in data.items():
+        if not isinstance(meta, dict):
+            continue
+        updated = meta.get("updatedAt", 0)
+        if isinstance(updated, (int, float)) and int(updated) > most_recent_updated:
+            most_recent_updated = int(updated)
+            most_recent_id = sid
+    return most_recent_id[:256], "", most_recent_updated
+
+
+def read_base_record() -> dict:
+    """Read the previous JSON record (if any) so we can preserve unknown fields."""
+    raw = safe_read(USAGE_FILE, SCAN_LIMIT_BYTES)
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def detect_auth_help(installed: bool) -> str:
+    """Return onboarding hint if env file is missing, else empty.
+    The actual API-key setup is handled by `openclaw onboard`."""
+    if not installed:
+        return ""
+    if not ENV_FILE.exists():
+        return AUTH_HELP_EMPTY_ENV
+    return ""
+
+
+def build_record(force: bool, limits_only: bool) -> dict:
+    base = read_base_record()
+    if not force and base.get("updatedAt"):
+        # reuse cache unless --force
+        try:
+            updated = dt.datetime.fromisoformat(base["updatedAt"])
+            if (now_local() - updated).total_seconds() < 20:
+                return base
+        except Exception:
+            pass
+
+    try:
+        return _build_record_inner(force, limits_only, base)
+    except Exception as exc:
+        # Stale-data-fallback: live checks failed (openclaw not installed,
+        # gateway stopped, trajectory dir unreadable, etc.). Return the last
+        # known-good record from the state file instead of zeros.
+        if STATE_FILE.exists():
+            try:
+                stale = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+                if isinstance(stale, dict) and stale.get("id"):
+                    stale["staleFallback"] = True
+                    stale["staleReason"] = f"{type(exc).__name__}: {exc}"
+                    return stale
+            except Exception:
+                pass
+        # No state available — return the cache as-is (panel will show last known values).
+        return base
+
+
+def _build_record_inner(force: bool, limits_only: bool, base: dict) -> dict:
+    installed, version = detect_installed()
+    gateway = detect_gateway_state() if not limits_only else base.get("gatewayState", "unknown")
+    agg = aggregate_trajectory() if not limits_only else {
+        "todayTotalTokens": base.get("todayTotalTokens", 0),
+        "todayTokensByModel": base.get("todayTokensByModel", {}),
+        "todayPrompts": base.get("todayPrompts", 0),
+        "todaySessions": base.get("todaySessions", 0),
+        "totalPrompts": base.get("totalPrompts", 0),
+        "totalSessions": base.get("totalSessions", 0),
+        "activeDays": base.get("activeDays", 0),
+        "activeDates": base.get("activeDates", []),
+        "recentDays": base.get("recentDays", []),
+        "modelUsage": base.get("modelUsage", {}),
+        "provider": base.get("provider", ""),
+        "modelId": base.get("modelId", ""),
+        "todayLocalDate": base.get("todayLocalDate", now_local().date().isoformat()),
+    }
+    if not limits_only:
+        session_id, session_title, session_updated_at = read_last_session()
+    else:
+        session_id = str(base.get("currentSessionId") or "")[:256]
+        session_title = str(base.get("currentSessionTitle") or "")[:512]
+        session_updated_at = int(base.get("currentSessionUpdatedAt") or 0)
+    gateway_started_at = detect_gateway_started_at() if not limits_only else str(base.get("gatewayStartedAt") or "")
+    node_version = detect_node_version() if not limits_only else str(base.get("nodeVersion") or "")
+    openclaw_pid = detect_openclaw_pid() if not limits_only else str(base.get("openclawPid") or "")
+    openclaw_uptime = detect_openclaw_uptime() if not limits_only else str(base.get("openclawUptime") or "")
+    discord_status = detect_discord_status() if not limits_only else str(base.get("discordStatus") or "unknown")
+    auth_help = detect_auth_help(installed) if not limits_only else str(base.get("authHelpText") or "")
+
+    provider = agg.get("provider", "") or ""
+    model_id = agg.get("modelId", "") or ""
+    if provider and model_id:
+        active_model = f"{provider}/{model_id}"
+    elif model_id:
+        active_model = model_id
+    elif provider:
+        active_model = provider
+    else:
+        active_model = ""
+
+    # Hermes-style status line: "<version> · <provider>/<model> · gateway <state>"
+    # Example: "OpenClaw 2026.7.1-2 (0790d9f) · <provider>/<model> · gateway active"
+    if installed:
+        version_part = version if version else "unknown version"
+        model_part = active_model if active_model else "no model"
+        # version_part already starts with "OpenClaw " (from `openclaw --version`)
+        status_text = f"{version_part} · {model_part} · gateway {gateway}"
+    else:
+        status_text = "OpenClaw CLI not found on PATH"
+
+    record = {
+        **base,
+        "schemaVersion": 1,
+        "id": AGENT_ID,
+        "name": AGENT_NAME,
+        "updatedAt": now_local().isoformat(timespec="seconds"),
+        "ready": bool(installed),
+        "hasLocalStats": bool(installed and TRAJECTORY_DIR.is_dir()),
+        "installed": bool(installed),
+        "version": version,
+        "gatewayState": gateway,
+        "activeModel": active_model,
+        "currentSessionId": session_id,
+        "currentSessionTitle": session_title,
+        "currentSessionUpdatedAt": session_updated_at,
+        "gatewayStartedAt": gateway_started_at,
+        "nodeVersion": node_version,
+        "openclawPid": openclaw_pid,
+        "openclawUptime": openclaw_uptime,
+        "discordStatus": discord_status,
+        "provider": provider,
+        "modelId": model_id,
+        "authHelpText": auth_help,
+        "usageStatusText": status_text,
+        "todayPrompts": agg.get("todayPrompts", 0),
+        "todaySessions": agg.get("todaySessions", 0),
+        "todayTotalTokens": agg.get("todayTotalTokens", 0),
+        "todayTokensByModel": agg.get("todayTokensByModel", {}),
+        "recentDays": agg.get("recentDays", []),
+        "limits": [],
+        "totalPrompts": agg.get("totalPrompts", 0),
+        "totalSessions": agg.get("totalSessions", 0),
+        "activeDays": agg.get("activeDays", 0),
+        "activeDates": agg.get("activeDates", []),
+        "modelUsage": agg.get("modelUsage", {}),
+        "cacheRatio": agg.get("cacheRatio", 0),
+        "avgContext": agg.get("avgContext", 0),
+    }
+
+    # Save successful record to state file for stale-data-fallback on next failure.
+    try:
+        STATE_FILE.write_text(json.dumps(record), encoding="utf-8")
+    except Exception:
+        pass
+
+    return record
+
+
+def main() -> int:
+    force = "--force" in sys.argv
+    limits_only = "--limits-only" in sys.argv
+    try:
+        record = build_record(force=force, limits_only=limits_only)
+    except Exception as exc:
+        print(f"omarchy-agent-usage-openclaw: collector failed: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(record, indent=2))
+    # Also write to STATE_FILE outside of build_record so any stale-fallback
+    # state from a previous run is replaced with the latest successful record.
+    # (build_record already saves on success; this is a belt-and-suspenders save
+    # at the end of the run.)
+    try:
+        USAGE_DIR.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(json.dumps(record), encoding="utf-8")
+    except Exception:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

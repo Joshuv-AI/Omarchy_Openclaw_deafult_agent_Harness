@@ -1,0 +1,182 @@
+{
+  "name": "openclaw-integration",
+  "displayName": "OpenClaw for Omarchy",
+  "version": "1.0.0",
+  "description": "Install OpenClaw and integrate it into Omarchy's agents panel. Adds an OpenClaw tab showing gateway state, version, active model, runtime, Discord status, and total sessions. Registers a lobster entry in the super space agents submenu. Optionally sets OpenClaw as the default agent.",
+  "author": {
+    "name": "OpenClaw for Omarchy contributors"
+  },
+  "license": "AGPL-3.0",
+  "homepage": "https://openclaw.io",
+  "minOmarchyVersion": "2026.08",
+  "entryPoints": {
+    "agentCollector": {
+      "path": "bin/omarchy-agent-usage-openclaw",
+      "installPath": "/usr/bin/omarchy-agent-usage-openclaw",
+      "agentId": "openclaw",
+      "agentName": "OpenClaw",
+      "interface": "omarchy-agent-usage",
+      "outputSchema": {
+        "id": "string",
+        "name": "string",
+        "version": "string",
+        "gatewayState": "active|stopped|not-installed|unknown",
+        "activeModel": "string",
+        "currentSessionId": "string",
+        "currentSessionTitle": "string",
+        "currentSessionUpdatedAt": "number",
+        "gatewayStartedAt": "string",
+        "nodeVersion": "string",
+        "openclawPid": "string",
+        "openclawUptime": "string",
+        "discordStatus": "active|not-running|unknown",
+        "ready": "boolean",
+        "hasLocalStats": "boolean",
+        "hasPromptStats": "boolean",
+        "todayPrompts": "number",
+        "todaySessions": "number",
+        "todayTotalTokens": "number",
+        "todayTokensByModel": "object",
+        "recentDays": "array",
+        "totalPrompts": "number",
+        "totalSessions": "number",
+        "activeDays": "number",
+        "activeDates": "array",
+        "modelUsage": "object",
+        "cacheRatio": "number",
+        "avgContext": "number",
+        "limits": "array",
+        "balance": "object|null",
+        "provider": "string",
+        "modelId": "string",
+        "modelApi": "string",
+        "usageStatusText": "string",
+        "authHelpText": "string"
+      },
+      "cacheFile": "~/.local/state/omarchy/agents/usage/openclaw.json",
+      "stateFile": "~/.local/state/omarchy/agents/usage/openclaw.state.json",
+      "refreshSeconds": 20
+    },
+    "panelPatch": {
+      "path": "targets/Panel.qml",
+      "installPath": "/usr/share/omarchy/shell/plugins/agents/Panel.qml",
+      "backupSuffix": ".openclaw-backup",
+      "marker": "// === OPENCLAW_INTEGRATION_V1 ==="
+    },
+    "mainPatch": {
+      "path": "targets/Main.qml",
+      "installPath": "/usr/share/omarchy/shell/plugins/agents/Main.qml",
+      "backupSuffix": ".openclaw-backup",
+      "marker": "// === OPENCLAW_INTEGRATION_V1 ==="
+    },
+    "assets": [
+      {
+        "path": "assets/openclaw.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/openclaw.svg"
+      },
+      {
+        "path": "assets/openclaw-light.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/openclaw-light.svg"
+      }
+    ],
+    "menuEntry": {
+      "configPath": "~/.config/omarchy/extensions/omarchy-menu.jsonc",
+      "provider": "super.submenus.agents.openclaw",
+      "icon": "🦞",
+      "label": "OpenClaw",
+      "action": "omarchy-agent openclaw"
+    },
+    "defaultAgent": {
+      "configPath": "~/.config/omarchy/defaults/agent",
+      "value": "openclaw"
+    }
+  },
+  "permissions": {
+    "filesystem": {
+      "writes": [
+        "/usr/bin/omarchy-agent-usage-openclaw",
+        "/usr/share/omarchy/shell/plugins/agents/assets/openclaw.svg",
+        "/usr/share/omarchy/shell/plugins/agents/assets/openclaw-light.svg",
+        "/usr/share/omarchy/shell/plugins/agents/Panel.qml",
+        "/usr/share/omarchy/shell/plugins/agents/Main.qml",
+        "~/.config/omarchy/extensions/omarchy-menu.jsonc",
+        "~/.config/omarchy/defaults/agent",
+        "~/.local/state/omarchy/agents/usage/openclaw.json",
+        "~/.local/state/omarchy/agents/usage/openclaw.state.json"
+      ],
+      "sudo": "yes (for /usr/bin/ and /usr/share/omarchy/ paths only)",
+      "notes": "No writes outside the paths listed. uninstall.sh restores system files from .openclaw-backup created at install time."
+    },
+    "subprocess": {
+      "executes": [
+        "openclaw --version",
+        "openclaw onboard (interactive, optional)",
+        "systemctl --user is-active openclaw-gateway.service",
+        "systemctl --user show openclaw-gateway.service",
+        "node --version",
+        "pgrep -f openclaw",
+        "pgrep -f discord"
+      ],
+      "remoteCode": "no",
+      "polkit": "no",
+      "notes": "Only reads user-local state. No calls to external services from the collector itself."
+    },
+    "apiKeys": {
+      "stored": "in ~/.openclaw/.env (chmod 600), managed by `openclaw onboard`",
+      "inPackage": "none",
+      "notes": "This package never ships or stores API keys. All key setup is delegated to OpenClaw's own CLI."
+    }
+  },
+  "securityBoundaries": {
+    "neverModifies": [
+      "/etc/passwd",
+      "/etc/shadow",
+      "/etc/sudoers",
+      "Polkit policies",
+      "systemd user services (only reads, never creates)",
+      "files outside the install paths listed in permissions.filesystem"
+    ],
+    "neverExecutes": [
+      "anything with sudo privileges beyond the file copies listed above",
+      "remote code or remote command execution",
+      "credential display (the panel deliberately hides auth text)",
+      "background jobs that survive panel close"
+    ],
+    "explicitNonGoals": [
+      "Token usage display for arbitrary providers (only OpenClaw-native fields; users add their own)",
+      "Hermes/Codex/Claude/etc. integration (out of scope; one agent per package)",
+      "Background services or daemons (the sweeper invokes us; we don't poll)",
+      "Privileged operations (no sudo tricks, no capability escalation)",
+      "API key storage or transmission (delegated to `openclaw onboard`)"
+    ]
+  },
+  "install": {
+    "command": "./install.sh",
+    "preflight": [
+      "Omarchy installed (any recent version with Hyprland + Quickshell)",
+      "OpenClaw binary (auto-fetched from https://openclaw.io/install.sh if missing)",
+      "sudo access for /usr/bin/ and /usr/share/omarchy/"
+    ],
+    "postInstall": [
+      "OpenClaw collector at /usr/bin/omarchy-agent-usage-openclaw",
+      "Lobster SVG assets in Omarchy's agents panel assets dir",
+      "Panel.qml + Main.qml patched (originals backed up as *.openclaw-backup)",
+      "OpenClaw entry in omarchy-menu.jsonc under super → agents",
+      "Optional: default agent set to openclaw",
+      "Quickshell reloaded"
+    ]
+  },
+  "uninstall": {
+    "command": "./uninstall.sh",
+    "reversible": "yes — restores Panel.qml + Main.qml from .openclaw-backup",
+    "sideEffects": "Removes collector, SVGs, menu entry. Does NOT uninstall OpenClaw itself."
+  },
+  "docs": {
+    "readme": "README.md",
+    "architecture": "docs/architecture.md",
+    "security": "docs/security.md",
+    "telemetry": "docs/telemetry.md",
+    "troubleshooting": "docs/troubleshooting.md",
+    "aiAgentSkill": "skill/SKILL.md"
+  }
+}
