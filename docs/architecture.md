@@ -34,8 +34,10 @@ openclaw-integration/
 │   │                          Collector for the OpenClaw provider
 │   ├── omarchy-agent-usage-grok
 │   │                          Collector for xAI Grok (requires XAI_API_KEY)
-│   └── omarchy-agent-usage-gemini
-│                              Collector for Google Gemini (requires GEMINI_API_KEY)
+│   ├── omarchy-agent-usage-gemini
+│   │                          Collector for Google Gemini (requires GEMINI_API_KEY)
+│   └── omarchy-agent-usage-hermes
+│                              Collector for Nous Hermes (requires install.sh + setup --portal)
 ├── assets/
 │   ├── claude.svg              Anthropic brand mark (greyed for dock center)
 │   ├── codex.svg               OpenAI brand mark (greyed for dock center)
@@ -73,6 +75,7 @@ unchanged. Total up to six providers:
 |---|---|---|
 | claude, codex, fireworks | Omarchy base | CLI tools installed + authenticated |
 | openclaw | this package | `openclaw onboard` |
+| hermes | this package | `curl .../install.sh | bash` + `hermes setup --portal` |
 | grok | this package | `XAI_API_KEY` env var |
 | gemini | this package | `GEMINI_API_KEY` or `GOOGLE_API_KEY` env var |
 

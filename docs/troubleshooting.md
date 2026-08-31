@@ -181,6 +181,51 @@ sudo cp /usr/share/omarchy/shell/plugins/agents/Main.qml.openclaw-backup \
 pkill -TERM -f 'quickshell -n -p /usr/share/omarchy/shell'
 ```
 
+
+## Hermes dock circle is missing
+
+**Symptom:** After installing Hermes, no circle appears in the agents dock.
+
+**Causes / fixes:**
+
+1. **Hermes isn't installed.**
+   ```bash
+   command -v hermes
+   ls -la ~/.local/state/omarchy/agents/usage/hermes.json
+   ```
+   If the JSON shows `"installed": false`, re-run `./install.sh` and accept the
+   Hermes install prompt.
+
+2. **Hermes is installed but not set up.**
+   ```bash
+   hermes setup --portal
+   ```
+   One OAuth round-trip covers the portal account + Tool Gateway tools.
+
+3. **Hermes gateway isn't running.**
+   ```bash
+   pgrep -f hermes
+   /usr/bin/omarchy-agent-usage-hermes --force
+   ```
+   Start the gateway: `hermes gateway`.
+
+## Hermes ring stays empty even though Hermes is connected
+
+**Symptom:** Hermes circle is visible but the gold ring doesn't fill.
+
+**Cause:** The ring is a *connection ring* (not a usage ring). It only fills
+when `gatewayState: "active"`. Hermes's `gateway` service needs to be running:
+
+```bash
+hermes gateway     # starts the messaging gateway service
+```
+
+If the daemon is running but the ring still doesn't fill, force a refresh:
+```bash
+/usr/bin/omarchy-agent-usage-hermes --force
+pkill -TERM -f 'quickshell -n -p /usr/share/omarchy/shell'
+```
+
 ## See also
 
 - `architecture.md` — how collectors fit together

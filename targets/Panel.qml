@@ -379,6 +379,7 @@ Panel {
       "gemini": "#4285F4",
       "openclaw": "#7C3AED",
       "fireworks": "#FF6B35",
+      "hermes": "#D4AF37",
       "copilot": "#6e40c9",
       "crush": "#ec4899",
       "omp": "#6b7280",
@@ -410,8 +411,13 @@ Panel {
     if (p.dailyRemainingPct !== undefined) {
       usedPercents.push(1 - p.dailyRemainingPct / 100);
     }
-    if (usedPercents.length === 0) return 0;
-    return Math.max.apply(null, usedPercents);
+    if (usedPercents.length > 0) {
+      return Math.max.apply(null, usedPercents);
+    }
+    // No token-usage data — fall back to connection state.
+    // Hermes's ring is a connection ring (full when gateway active), not a usage ring.
+    if (p.gatewayState === "active" || p.ready === true) return 1;
+    return 0;
   }
 
   // Nothing to report, nothing in the bar: Bar.qml collapses a slot whose item

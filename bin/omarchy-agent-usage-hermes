@@ -1,0 +1,257 @@
+#!/usr/bin/env python3
+"""Collect Hermes agent status for the Omarchy agents panel.
+
+Reads:
+  - command -v hermes (install detection)
+  - hermes --version (version string)
+  - hermes status (agent, auth, and platform status) — primary
+  - pgrep -f hermes (gateway process fallback) — secondary
+  - ps -o etime= -p <pid> (uptime calculation)
+
+Output JSON matches the schema documented in the omarchy-integration
+manifest.json (outputSchema block). Like the OpenClaw collector, this
+emits a record the panel reads. Unlike OpenClaw's collector, this
+deliberately omits recentDays / limits / modelUsage — Hermes has no
+token-usage to display in the panel (per Josh's direction).
+
+The panel uses gatewayState + ready to fill the dock ring (full when
+the gateway is active, empty otherwise). This is a "connection ring",
+not a usage ring.
+"""
+# omarchy:summary=Print Hermes agent usage as JSON
+# omarchy:args=[--force]
+# omarchy:hidden=true
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+AGENT_ID = "hermes"
+AGENT_NAME = "Hermes"
+AUTH_HELP_NO_HERMES = (
+    "Install Hermes: curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash"
+)
+AUTH_HELP_NEEDS_SETUP = "Run: hermes setup --portal"
+USAGE_DIR = Path(
+    os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")
+) / "omarchy" / "agents" / "usage"
+USAGE_FILE = USAGE_DIR / f"{AGENT_ID}.json"
+SUBPROCESS_TIMEOUT_SECONDS = 8
+SUBPROCESS_OUTPUT_LIMIT = 4096
+
+
+def _humanize_seconds(total_seconds) -> str:
+    """Compact 'Nd Nh' / 'Nh Nm' / 'Nm' representation."""
+    if total_seconds is None or total_seconds <= 0:
+        return "—"
+    seconds = int(total_seconds)
+    days = seconds // 86400
+    hours = (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+    if days > 0:
+        return f"{days}d {hours}h"
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    if minutes > 0:
+        return f"{minutes}m"
+    return f"{seconds}s"
+
+
+def _read_status_field(status_text, key):
+    """Extract `key: value` from a multi-line status output. Returns '' if not found."""
+    for line in status_text.splitlines():
+        line = line.strip()
+        m = re.match(rf"^{re.escape(key)}\s*[:=]\s*(.+)$", line, flags=re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
+def detect_hermes():
+    """Run `command -v hermes`. Returns the binary path or ''."""
+    try:
+        out = subprocess.check_output(
+            ["command", "-v", "hermes"],
+            stderr=subprocess.DEVNULL,
+            timeout=SUBPROCESS_TIMEOUT_SECONDS,
+        ).decode().strip()
+        return out
+    except Exception:
+        return ""
+
+
+def get_version(hermes_bin):
+    """Run `<hermes> --version`. Returns the version string (first line) or ''."""
+    try:
+        out = subprocess.check_output(
+            [hermes_bin, "--version"],
+            stderr=subprocess.STDOUT,
+            timeout=SUBPROCESS_TIMEOUT_SECONDS,
+        ).decode(errors="replace").strip()
+        return out.splitlines()[0] if out else ""
+    except Exception:
+        return ""
+
+
+def gateway_state(hermes_bin):
+    """Detect Hermes gateway status.
+
+    Tries `hermes status` first (more structured). Falls back to
+    `pgrep -f hermes` for responsiveness if status parse fails.
+
+    Returns (state, pid_str) where state is 'active'|'stopped'|'unknown'.
+
+    Note: if `hermes_bin` is empty (Hermes isn't installed), we return
+    'stopped' immediately — no pgrep fallback. Otherwise pgrep -f hermes
+    would match THIS very collector (whose name contains "hermes"), giving
+    a false positive.
+    """
+    pid_str = ""
+    # If Hermes isn't installed at all, don't bother probing.
+    if not hermes_bin:
+        return "stopped", ""
+
+    status_text = ""
+    try:
+        status_text = subprocess.check_output(
+            [hermes_bin, "status"],
+            stderr=subprocess.STDOUT,
+            timeout=SUBPROCESS_TIMEOUT_SECONDS,
+        ).decode(errors="replace")
+    except Exception:
+        status_text = ""
+
+    if status_text:
+        # Try structured extraction
+        gateway_field = _read_status_field(status_text, "gateway").lower()
+        if "active" in gateway_field or "running" in gateway_field:
+            return "active", pid_str
+        if "stopped" in gateway_field or "inactive" in gateway_field:
+            return "stopped", pid_str
+        # Loose heuristic on whole text
+        lower = status_text.lower()
+        if "running" in lower or "active" in lower:
+            return "active", pid_str
+        if "stopped" in lower or "inactive" in lower:
+            return "stopped", pid_str
+
+    # Fallback: pgrep, but exclude this collector's own PID and the
+    # python interpreter running it (their cmdlines contain "hermes").
+    try:
+        self_pid = str(os.getpid())
+        parent_pid = str(os.getppid())
+        pid_out = subprocess.check_output(
+            ["pgrep", "-f", "hermes"],
+            stderr=subprocess.DEVNULL,
+            timeout=SUBPROCESS_TIMEOUT_SECONDS,
+        ).decode().strip().splitlines()
+        for pid in pid_out:
+            if pid and pid not in (self_pid, parent_pid):
+                return "active", pid
+    except Exception:
+        pass
+    return "stopped", ""
+
+
+def get_active_model(hermes_bin):
+    """Try to extract current model from `hermes status` output."""
+    if not hermes_bin:
+        return ""
+    try:
+        out = subprocess.check_output(
+            [hermes_bin, "status"],
+            stderr=subprocess.STDOUT,
+            timeout=SUBPROCESS_TIMEOUT_SECONDS,
+        ).decode(errors="replace")
+        return _read_status_field(out, "model")
+    except Exception:
+        return ""
+
+
+def get_uptime(pid):
+    """Run `ps -o etime= -p <pid>` and convert to compact human form."""
+    if not pid:
+        return ""
+    try:
+        ps = subprocess.check_output(
+            ["ps", "-o", "etime=", "-p", pid],
+            stderr=subprocess.DEVNULL,
+            timeout=SUBPROCESS_TIMEOUT_SECONDS,
+        ).decode().strip()
+        # etime is "MM:SS" / "HH:MM:SS" / "DD-HH:MM:SS"
+        parts = ps.replace("-", ":").split(":")
+        secs = 0
+        if len(parts) == 4:  # DD-HH:MM:SS
+            secs = int(parts[0]) * 86400 + int(parts[1]) * 3600 + int(parts[2]) * 60 + int(parts[3])
+        elif len(parts) == 3:  # HH:MM:SS
+            secs = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        elif len(parts) == 2:  # MM:SS
+            secs = int(parts[0]) * 60 + int(parts[1])
+        return _humanize_seconds(secs) if secs > 0 else ""
+    except Exception:
+        return ""
+
+
+def main():
+    USAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+    hermes_bin = detect_hermes()
+    installed = bool(hermes_bin)
+
+    version = get_version(hermes_bin) if installed else ""
+    gw, pid_str = gateway_state(hermes_bin)
+    active_model = get_active_model(hermes_bin) if installed else ""
+    uptime = get_uptime(pid_str) if pid_str else ""
+
+    record = {
+        "id": AGENT_ID,
+        "name": AGENT_NAME,
+        "schemaVersion": 1,
+        "provider": "nous",
+        "ready": gw == "active",
+        "installed": installed,
+        "version": version or "",
+        "activeModel": active_model or "",
+        "gatewayState": gw,
+        "currentSessionId": "",
+        "currentSessionUpdatedAt": 0,
+        "gatewayStartedAt": "",
+        "nodeVersion": "",
+        "hermesPid": pid_str or "",
+        "hermesUptime": uptime or "",
+        "discordStatus": "",
+        "todayPrompts": 0,
+        "todaySessions": 0,
+        "todayTotalTokens": 0,
+        "totalPrompts": 0,
+        "totalSessions": 0,
+        "activeDays": 0,
+        "activeDates": [],
+        "modelUsage": {},
+        "avgContext": 0,
+        "cacheRatio": 0,
+        "balance": None,
+        # Deliberately omitted: recentDays, limits, modelUsage
+        # (Hermes has no token usage to display in the panel)
+        "authHelpText": "",
+    }
+
+    if not installed:
+        record["authHelpText"] = AUTH_HELP_NO_HERMES
+    elif gw != "active":
+        record["authHelpText"] = AUTH_HELP_NEEDS_SETUP
+
+    USAGE_FILE.write_text(json.dumps(record, indent=2))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"omarchy-agent-usage-hermes: {e!r}", file=sys.stderr)
+        sys.exit(0)

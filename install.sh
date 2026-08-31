@@ -37,7 +37,7 @@ echo "==========================="
 echo
 
 # --- 0. OpenClaw presence check + official install if missing ---
-echo "[0/7] OpenClaw installation check..."
+echo "[0/8] OpenClaw installation check..."
 if ! command -v openclaw >/dev/null 2>&1; then
     echo "    OpenClaw not found."
     echo
@@ -65,7 +65,7 @@ fi
 
 # --- 1. OpenClaw onboarding (API key setup) ---
 echo
-echo "[1/7] Running openclaw onboard (API key setup)..."
+echo "[1/8] Running openclaw onboard (API key setup)..."
 if command -v openclaw >/dev/null 2>&1; then
     # openclaw onboard is interactive — runs in the user's terminal.
     # It walks through API key configuration and any other setup.
@@ -83,11 +83,53 @@ fi
 
 # --- 2. Collector scripts ---
 echo
-echo "[2/7] Collector scripts..."
+# --- 2. Hermes presence check + onboard (if missing) ---
+echo
+echo "[2/8] Hermes presence check..."
+if ! command -v hermes >/dev/null 2>&1; then
+    echo "    Hermes not found."
+    echo
+    read -r -p "    Install Hermes now? (curl installer from hermes-agent.nousresearch.com) [Y/n] " resp
+    resp=${resp:-Y}
+    if [[ "$resp" =~ ^[Yy]$ ]]; then
+        echo "    Running Hermes installer..."
+        if curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash; then
+            echo "    Hermes installed"
+        else
+            echo "    Installer failed. Install Hermes manually: curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash"
+            echo "    Then re-run this script."
+            exit 1
+        fi
+    else
+        echo "    Skipped. Install Hermes manually then re-run this script."
+        exit 1
+    fi
+else
+    hermes --version 2>/dev/null | head -1 | sed 's/^/    Version: /'
+fi
+
+# --- 2b. Hermes setup (portal auth + onboarding) ---
+echo
+echo "    [2/8 cont.] Running hermes setup --portal (one-time auth)..."
+if command -v hermes >/dev/null 2>&1; then
+    # hermes setup --portal is interactive. If user has already configured portal,
+    # it's a no-op. Otherwise it opens a browser for OAuth.
+    if [ -f "$HOME/.hermes/.env" ] || [ -f "$HOME/.hermes/config.yaml" ]; then
+        echo "    ~/.hermes config exists — skipping setup."
+        echo "    (Run \`hermes setup --portal\` manually to update your portal account.)"
+    else
+        hermes setup --portal || {
+            echo "    hermes setup --portal exited non-zero. Continuing anyway."
+            echo "    (You can run \`hermes setup --portal\` manually later.)"
+        }
+    fi
+fi
+
+echo "[3/8] Collector scripts..."
 # All three collectors ship in this package. openclaw is always installed.
 # grok and gemini activate only when the corresponding API key env var is set,
 # but the binaries are installed regardless so a fresh user can set keys later.
-for collector in omarchy-agent-usage-openclaw omarchy-agent-usage-grok omarchy-agent-usage-gemini; do
+for collector in omarchy-agent-usage-openclaw omarchy-agent-usage-grok omarchy-agent-usage-gemini omarchy-agent-usage-hermes; do
     src="$SCRIPT_DIR/bin/$collector"
     dst="/usr/bin/$collector"
     if [ ! -f "$src" ]; then
@@ -106,10 +148,10 @@ done
 
 # --- 3. SVG assets ---
 echo
-echo "[3/7] SVG assets..."
+echo "[4/8] SVG assets..."
 # All 8 provider icons. The dock renders the center icon greied and the ring
 # in the provider's brand color, so all icons use a uniform greied fill here.
-for svg in claude.svg codex.svg codex-light.svg fireworks.svg grok.svg gemini.svg openclaw.svg openclaw-light.svg; do
+for svg in claude.svg codex.svg codex-light.svg fireworks.svg grok.svg gemini.svg hermes.svg openclaw.svg openclaw-light.svg; do
     if [ -f "$ASSET_DST_DIR/$svg" ] && cmp -s "$ASSET_SRC_DIR/$svg" "$ASSET_DST_DIR/$svg"; then
         echo "    $svg: already current."
     else
@@ -122,7 +164,7 @@ done
 
 # --- 4. Panel.qml + Main.qml + manifest.json (backup + integrate) ---
 echo
-echo "[4/7] Panel.qml + Main.qml + manifest.json..."
+echo "[5/8] Panel.qml + Main.qml + manifest.json..."
 for entry in \
   "$PANEL_DST:$PANEL_BACKUP:$PANEL_TARGET" \
   "$MAIN_DST:$MAIN_BACKUP:$MAIN_TARGET" \
@@ -147,7 +189,7 @@ done
 
 # --- 5. Super space menu entry (agents → OpenClaw) ---
 echo
-echo "[5/7] Super space menu entry..."
+echo "[6/8] Super space menu entry..."
 mkdir -p "$(dirname "$MENU_CONFIG")"
 if [ ! -f "$MENU_CONFIG" ]; then
     cat > "$MENU_CONFIG" <<'EOF'
@@ -179,6 +221,12 @@ agents['openclaw'] = {
     'action': 'omarchy-agent openclaw',
     'description': 'Launch OpenClaw',
 }
+agents['hermes'] = {
+    'icon': '🪽',
+    'label': 'Hermes',
+    'action': 'hermes chat',
+    'description': 'Launch Hermes',
+}
 with open(path, 'w') as f:
     json.dump(data, f, indent=2)
     f.write('\n')
@@ -188,7 +236,7 @@ fi
 
 # --- 6. Default agent (interactive) ---
 echo
-echo "[6/7] Default agent (optional)..."
+echo "[7/8] Default agent (optional)..."
 mkdir -p "$(dirname "$DEFAULT_AGENT_FILE")"
 current_default=$(cat "$DEFAULT_AGENT_FILE" 2>/dev/null || echo "")
 if [ "$current_default" = "openclaw" ]; then
@@ -205,7 +253,7 @@ fi
 
 # --- 7. Reload Quickshell ---
 echo
-echo "[7/7] Reloading Quickshell..."
+echo "[8/8] Reloading Quickshell..."
 QSPID=$(pgrep -f "quickshell -n -p /usr/share/omarchy/shell" | head -1 || true)
 if [ -n "$QSPID" ]; then
     kill -TERM "$QSPID" 2>/dev/null || true

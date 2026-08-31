@@ -1,8 +1,8 @@
 {
   "name": "openclaw-integration",
-  "displayName": "OpenClaw for Omarchy",
-  "version": "2.0.0",
-  "description": "Installs OpenClaw plus two optional collectors (Grok, Gemini) and integrates them into Omarchy's agents panel as a multi-provider dock with brand-colored progress rings. Adds an OpenClaw tab showing gateway state, version, active model, runtime, Discord status, total sessions, and MiniMax token plan. Registers a lobster entry in the super space agents submenu. Optionally sets OpenClaw as the default agent.",
+  "displayName": "OpenClaw + Hermes for Omarchy",
+  "version": "2.1.0",
+  "description": "Installs OpenClaw and Hermes plus two optional collectors (Grok, Gemini) and integrates them into Omarchy's agents panel as a multi-provider dock with brand-colored progress rings. Adds an OpenClaw tab showing gateway state, version, active model, runtime, Discord status, total sessions, and MiniMax token plan. Adds a Hermes tab with a mirrored display (gateway/runtime/model/etc.) minus token-usage. Registers a lobster OpenClaw entry and a wing Hermes entry in the super space agents submenu. Optionally sets OpenClaw as the default agent.",
   "author": {
     "name": "OpenClaw for Omarchy contributors"
   },
@@ -140,6 +140,51 @@
         "remoteEndpoint": "GET https://generativelanguage.googleapis.com/v1beta/models",
         "refreshSeconds": 60,
         "networkCalls": "only when GEMINI_API_KEY or GOOGLE_API_KEY is set"
+      },
+      {
+        "path": "bin/omarchy-agent-usage-hermes",
+        "installPath": "/usr/bin/omarchy-agent-usage-hermes",
+        "agentId": "hermes",
+        "agentName": "Hermes",
+        "interface": "omarchy-agent-usage",
+        "activeByDefault": false,
+        "activation": "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash, then hermes setup --portal",
+        "outputSchema": {
+          "id": "string",
+          "name": "string",
+          "schemaVersion": "number",
+          "provider": "string",
+          "ready": "boolean",
+          "installed": "boolean",
+          "version": "string",
+          "activeModel": "string",
+          "gatewayState": "active|stopped|unknown",
+          "currentSessionId": "string",
+          "currentSessionUpdatedAt": "number",
+          "gatewayStartedAt": "string",
+          "nodeVersion": "string",
+          "hermesPid": "string",
+          "hermesUptime": "string",
+          "discordStatus": "string",
+          "todayPrompts": "number",
+          "todaySessions": "number",
+          "todayTotalTokens": "number",
+          "totalPrompts": "number",
+          "totalSessions": "number",
+          "activeDays": "number",
+          "activeDates": "array",
+          "modelUsage": "object",
+          "avgContext": "number",
+          "cacheRatio": "number",
+          "balance": "object|null",
+          "authHelpText": "string",
+          "recentDays": "array",
+          "limits": "array",
+          "_notes": "recentDays / limits / modelUsage are written as empty arrays — Hermes has no token usage to display. The dock ring uses gatewayState (full when active, empty when stopped) instead of a usage fraction."
+        },
+        "cacheFile": "~/.local/state/omarchy/agents/usage/hermes.json",
+        "refreshSeconds": 60,
+        "networkCalls": "none from the collector (only local subprocess checks)"
       }
     ],
     "panelPatch": {
@@ -159,14 +204,51 @@
       "purpose": "Enables all 6 providers in defaults.providers and sets refreshIntervalSec to 60"
     },
     "assets": [
-      {"path": "assets/claude.svg",         "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/claude.svg",         "purpose": "Anthropic brand mark (greied)"},
-      {"path": "assets/codex.svg",          "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/codex.svg",          "purpose": "OpenAI brand mark (greied)"},
-      {"path": "assets/codex-light.svg",    "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/codex-light.svg",    "purpose": "Light-theme OpenAI variant (greied)"},
-      {"path": "assets/fireworks.svg",      "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/fireworks.svg",      "purpose": "Fireworks brand mark (greied)"},
-      {"path": "assets/grok.svg",           "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/grok.svg",           "purpose": "xAI Grok stylized X (greied)"},
-      {"path": "assets/gemini.svg",         "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/gemini.svg",         "purpose": "Google Gemini interlocking diamond (greied)"},
-      {"path": "assets/openclaw.svg",       "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/openclaw.svg",       "purpose": "Lobster emoji with grayscale filter"},
-      {"path": "assets/openclaw-light.svg", "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/openclaw-light.svg", "purpose": "Light-theme lobster variant"}
+      {
+        "path": "assets/claude.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/claude.svg",
+        "purpose": "Anthropic brand mark (greied)"
+      },
+      {
+        "path": "assets/codex.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/codex.svg",
+        "purpose": "OpenAI brand mark (greied)"
+      },
+      {
+        "path": "assets/codex-light.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/codex-light.svg",
+        "purpose": "Light-theme OpenAI variant (greied)"
+      },
+      {
+        "path": "assets/fireworks.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/fireworks.svg",
+        "purpose": "Fireworks brand mark (greied)"
+      },
+      {
+        "path": "assets/grok.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/grok.svg",
+        "purpose": "xAI Grok stylized X (greied)"
+      },
+      {
+        "path": "assets/gemini.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/gemini.svg",
+        "purpose": "Google Gemini interlocking diamond (greied)"
+      },
+      {
+        "path": "assets/hermes.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/hermes.svg",
+        "purpose": "Hermes messenger wing (greied)"
+      },
+      {
+        "path": "assets/openclaw.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/openclaw.svg",
+        "purpose": "Lobster emoji with grayscale filter"
+      },
+      {
+        "path": "assets/openclaw-light.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/openclaw-light.svg",
+        "purpose": "Light-theme lobster variant"
+      }
     ],
     "menuEntry": {
       "configPath": "~/.config/omarchy/extensions/omarchy-menu.jsonc",
@@ -202,7 +284,10 @@
         "~/.local/state/omarchy/agents/usage/openclaw.json",
         "~/.local/state/omarchy/agents/usage/openclaw.state.json",
         "~/.local/state/omarchy/agents/usage/grok.json",
-        "~/.local/state/omarchy/agents/usage/gemini.json"
+        "~/.local/state/omarchy/agents/usage/gemini.json",
+        "/usr/bin/omarchy-agent-usage-hermes",
+        "/usr/share/omarchy/shell/plugins/agents/assets/hermes.svg",
+        "~/.local/state/omarchy/agents/usage/hermes.json"
       ],
       "sudo": "yes (for /usr/bin/ and /usr/share/omarchy/ paths only)",
       "notes": "No writes outside the paths listed. uninstall.sh restores system files from .openclaw-backup created at install time."
@@ -215,7 +300,14 @@
         "systemctl --user show openclaw-gateway.service",
         "node --version",
         "pgrep -f openclaw",
-        "pgrep -f discord"
+        "pgrep -f discord",
+        "command -v hermes",
+        "hermes --version",
+        "hermes status",
+        "pgrep -f hermes",
+        "ps -o etime= -p <pid>",
+        "curl -fsSL https://hermes-agent.nousresearch.com/install.sh",
+        "hermes setup --portal (interactive)"
       ],
       "remoteCode": "no",
       "polkit": "no",
@@ -223,9 +315,18 @@
     },
     "apiKeys": {
       "stored": [
-        {"provider": "openclaw", "location": "~/.openclaw/.env (chmod 600), managed by `openclaw onboard`"},
-        {"provider": "grok",     "location": "XAI_API_KEY env var (read by collector only, never persisted)"},
-        {"provider": "gemini",   "location": "GEMINI_API_KEY or GOOGLE_API_KEY env var (read by collector only, never persisted)"}
+        {
+          "provider": "openclaw",
+          "location": "~/.openclaw/.env (chmod 600), managed by `openclaw onboard`"
+        },
+        {
+          "provider": "grok",
+          "location": "XAI_API_KEY env var (read by collector only, never persisted)"
+        },
+        {
+          "provider": "gemini",
+          "location": "GEMINI_API_KEY or GOOGLE_API_KEY env var (read by collector only, never persisted)"
+        }
       ],
       "inPackage": "none",
       "notes": "This package never ships or stores API keys. OpenClaw uses its own onboarding flow; Grok and Gemini keys come from the user's environment."
@@ -274,7 +375,10 @@
       "Each dock circle has a brand-colored progress ring around a greied center icon",
       "Double-click anywhere on the dock toggles ring colors on/off",
       "Click a circle to open the panel focused on that provider",
-      "Manifest defaults enable all 6 providers; refresh interval is 60s"
+      "Manifest defaults enable all 6 providers; refresh interval is 60s",
+      "Hermes appears as an 11th provider in the agents default select screen and the dock",
+      "Hermes dock ring is a connection ring (full when gateway active, empty when stopped) — not a usage ring",
+      "Hermes panel popup mirrors OpenClaw minus the token-usage sections (no recentDays / limits / models chart)"
     ]
   },
   "uninstall": {

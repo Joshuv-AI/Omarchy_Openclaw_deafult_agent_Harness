@@ -47,6 +47,21 @@ display a setup hint.
 When neither key is set, the collector writes a minimal record with
 `authHelpText` pointing to https://aistudio.google.com/apikey.
 
+
+### `omarchy-agent-usage-hermes` (installed but no-op without setup)
+
+| Source | What it reads | Where it lives |
+|---|---|---|
+| `command -v hermes` | Hermes binary path | `$PATH` |
+| `hermes --version` | Version string | Hermes CLI |
+| `hermes status` | Agent, auth, platform, gateway state | Hermes CLI |
+| `pgrep -f hermes` | Hermes process PID (fallback) | `/proc` |
+| `ps -o etime= -p <pid>` | Gateway process uptime | `/proc` |
+
+The collector deliberately writes **no `recentDays`, no `limits`, no `modelUsage`** —
+Hermes has no token-usage tracking. The dock ring fill falls through to the
+connection-state fallback in `Panel.qml` (full when `gatewayState: "active"`).
+
 ## Data outputs
 
 Every collector emits JSON to stdout. Omarchy's sweeper writes this to

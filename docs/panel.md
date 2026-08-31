@@ -93,6 +93,7 @@ sessions, MiniMax token plan). See `manifest.json` for the full list.
 | `codex` | `#10A37F` | `codex.svg` | ships with Omarchy | (via `codex` CLI) |
 | `fireworks` | `#FF6B35` | `fireworks.svg` | ships with Omarchy | (via `fireworks` CLI) |
 | `openclaw` | `#7C3AED` | `openclaw.svg` | **ships with this package** | (handled by `openclaw onboard`) |
+| `hermes` | `#D4AF37` | `hermes.svg` | **ships with this package** | `curl -fsSL https://hermes-agent.nousresearch.com/install.sh` + `hermes setup --portal` |
 | `grok` | `#8B8B8B` | `grok.svg` | **ships with this package** | `XAI_API_KEY` |
 | `gemini` | `#4285F4` | `gemini.svg` | **ships with this package** | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 
@@ -165,3 +166,16 @@ so `uninstall.sh` can restore them.
 - `telemetry.md` — what data flows where (specifically what each collector
   reads and writes)
 - `troubleshooting.md` — common panel-side issues
+
+## Hermes's dock ring
+
+Hermes has **no token usage tracking** — no rate limits, no API quotas. Its
+dock ring is therefore a **connection ring**, not a usage ring:
+
+- Gateway active (`gatewayState: "active"`) → ring fully filled (gold `#D4AF37`)
+- Gateway stopped (`gatewayState: "stopped"`) → ring empty
+- Provider not installed → panel filters it out via `providerHasData()`
+
+The collector writes no `intervalRemainingPct`, so `providerIntervalFraction()`
+falls through to the connection-state fallback in `Panel.qml`. Other providers
+with token data are unaffected.
