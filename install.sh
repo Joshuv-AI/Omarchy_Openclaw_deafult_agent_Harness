@@ -102,7 +102,7 @@ if ! command -v hermes >/dev/null 2>&1; then
         fi
     else
         echo "    Skipped. Install Hermes manually then re-run this script."
-        exit 1
+        echo "    (Continuing with the rest of the install — menu entry will be added regardless.)"
     fi
 else
     hermes --version 2>/dev/null | head -1 | sed 's/^/    Version: /'
