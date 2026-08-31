@@ -174,7 +174,7 @@ data.setdefault('super', {})
 data.setdefault('submenus', {})
 agents = data['super']['submenus'].setdefault('agents', {})
 agents['openclaw'] = {
-    'icon': '🦞',
+    'icon': '⌬',
     'label': 'OpenClaw',
     'action': 'omarchy-agent openclaw',
     'description': 'Launch OpenClaw',

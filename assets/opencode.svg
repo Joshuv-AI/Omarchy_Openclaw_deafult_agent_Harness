@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" stroke="#888888" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+  <!-- < > brackets -->
+  <polyline points="80,64 32,128 80,192"/>
+  <polyline points="176,64 224,128 176,192"/>
+</svg>

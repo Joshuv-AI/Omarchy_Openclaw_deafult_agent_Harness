@@ -378,7 +378,12 @@ Panel {
       "grok": "#8B8B8B",
       "gemini": "#4285F4",
       "openclaw": "#7C3AED",
-      "fireworks": "#FF6B35"
+      "fireworks": "#FF6B35",
+      "copilot": "#6e40c9",
+      "crush": "#ec4899",
+      "omp": "#6b7280",
+      "opencode": "#10b981",
+      "pi": "#3b82f6",
     };
     return colors[id] || "#888888";
   }
