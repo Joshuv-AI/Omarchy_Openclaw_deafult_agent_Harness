@@ -742,7 +742,7 @@ Panel {
 
           Column {
             id: balanceSection
-            visible: false
+            visible: !!root.balance
             width: parent.width
             spacing: Style.space(10)
 
