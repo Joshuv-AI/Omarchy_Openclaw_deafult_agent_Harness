@@ -1,8 +1,8 @@
 {
   "name": "openclaw-integration",
-  "displayName": "OpenClaw + Hermes for Omarchy",
-  "version": "2.1.0",
-  "description": "Installs OpenClaw and Hermes plus two optional collectors (Grok, Gemini) and integrates them into Omarchy's agents panel as a multi-provider dock with brand-colored progress rings. Adds an OpenClaw tab showing gateway state, version, active model, runtime, Discord status, total sessions, and MiniMax token plan. Adds a Hermes tab with a mirrored display (gateway/runtime/model/etc.) minus token-usage. Registers a lobster OpenClaw entry and a wing Hermes entry in the super space agents submenu. Optionally sets OpenClaw as the default agent.",
+  "displayName": "OpenClaw + Hermes + MiniMax for Omarchy",
+  "version": "2.2.0",
+  "description": "Installs OpenClaw and Hermes plus two optional collectors (Grok, Gemini) and integrates them into Omarchy's agents panel as a multi-provider dock with brand-colored progress rings. Adds an OpenClaw tab showing gateway state, version, active model, runtime, Discord status, total sessions. Adds a Hermes tab with a mirrored display (gateway/runtime/model/etc.) minus token-usage. Adds a MiniMax tab for token-usage data (5h + weekly bars) — split out of the OpenClaw record so the model data lives with the model, not the agent. Registers lobster OpenClaw + wing Hermes entries in the super space agents submenu. Optionally sets OpenClaw as the default agent.",
   "author": {
     "name": "OpenClaw for Omarchy contributors"
   },
@@ -185,6 +185,36 @@
         "cacheFile": "~/.local/state/omarchy/agents/usage/hermes.json",
         "refreshSeconds": 60,
         "networkCalls": "none from the collector (only local subprocess checks)"
+      },
+      {
+        "path": "bin/omarchy-agent-usage-minimax",
+        "installPath": "/usr/bin/omarchy-agent-usage-minimax",
+        "agentId": "minimax",
+        "agentName": "MiniMax",
+        "interface": "omarchy-agent-usage",
+        "activeByDefault": false,
+        "activation": "MINIMAX_API_KEY in ~/.openclaw/.env (typically configured by running `openclaw onboard` once)",
+        "outputSchema": {
+          "id": "string",
+          "name": "string",
+          "schemaVersion": "number",
+          "provider": "string",
+          "ready": "boolean",
+          "installed": "boolean",
+          "version": "string",
+          "activeModel": "string",
+          "minimaxAvailable": "boolean",
+          "minimaxError": "string",
+          "minimaxTokenPlan": "object",
+          "minimaxSummary5h": "string",
+          "minimaxSummaryWeekly": "string",
+          "minimaxSummaryReset": "string",
+          "minimaxFetchedAt": "string",
+          "authHelpText": "string"
+        },
+        "cacheFile": "~/.local/state/omarchy/agents/usage/minimax.json",
+        "refreshSeconds": 60,
+        "networkCalls": "GET https://www.minimax.io/v1/token_plan/remains (only when MINIMAX_API_KEY is set)"
       }
     ],
     "panelPatch": {
@@ -240,6 +270,11 @@
         "purpose": "Hermes messenger wing (greied)"
       },
       {
+        "path": "assets/minimax.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/minimax.svg",
+        "purpose": "MiniMax stylized M (greied)"
+      },
+      {
         "path": "assets/openclaw.svg",
         "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/openclaw.svg",
         "purpose": "Lobster emoji with grayscale filter"
@@ -287,7 +322,10 @@
         "~/.local/state/omarchy/agents/usage/gemini.json",
         "/usr/bin/omarchy-agent-usage-hermes",
         "/usr/share/omarchy/shell/plugins/agents/assets/hermes.svg",
-        "~/.local/state/omarchy/agents/usage/hermes.json"
+        "~/.local/state/omarchy/agents/usage/hermes.json",
+        "/usr/bin/omarchy-agent-usage-minimax",
+        "/usr/share/omarchy/shell/plugins/agents/assets/minimax.svg",
+        "~/.local/state/omarchy/agents/usage/minimax.json"
       ],
       "sudo": "yes (for /usr/bin/ and /usr/share/omarchy/ paths only)",
       "notes": "No writes outside the paths listed. uninstall.sh restores system files from .openclaw-backup created at install time."
@@ -307,7 +345,8 @@
         "pgrep -f hermes",
         "ps -o etime= -p <pid>",
         "curl -fsSL https://hermes-agent.nousresearch.com/install.sh",
-        "hermes setup --portal (interactive)"
+        "hermes setup --portal (interactive)",
+        "command -v openclaw (for env lookup, not for detection)"
       ],
       "remoteCode": "no",
       "polkit": "no",
@@ -378,7 +417,10 @@
       "Manifest defaults enable all 6 providers; refresh interval is 60s",
       "Hermes appears as an 11th provider in the agents default select screen and the dock",
       "Hermes dock ring is a connection ring (full when gateway active, empty when stopped) — not a usage ring",
-      "Hermes panel popup mirrors OpenClaw minus the token-usage sections (no recentDays / limits / models chart)"
+      "Hermes panel popup mirrors OpenClaw minus the token-usage sections (no recentDays / limits / models chart)",
+      "MiniMax appears as its own provider in the dock with a red ring (color #FF0000)",
+      "MiniMax panel popup shows token-usage (5h + weekly bars + reset countdowns) — split from OpenClaw",
+      "OpenClaw panel popup no longer shows token-usage (data now lives in MiniMax record)"
     ]
   },
   "uninstall": {

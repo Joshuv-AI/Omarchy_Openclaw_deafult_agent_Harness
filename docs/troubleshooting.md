@@ -226,6 +226,30 @@ If the daemon is running but the ring still doesn't fill, force a refresh:
 pkill -TERM -f 'quickshell -n -p /usr/share/omarchy/shell'
 ```
 
+
+## MiniMax dock circle is missing or shows empty data
+
+**Symptom:** MiniMax doesn't appear in the dock, or appears with no token-usage data.
+
+**Causes / fixes:**
+
+1. **MINIMAX_API_KEY not set in `~/.openclaw/.env`.**
+   ```bash
+   grep MINIMAX ~/.openclaw/.env
+   /usr/bin/omarchy-agent-usage-minimax --force
+   ```
+   If the JSON shows `"ready": false` with `"authHelpText"` mentioning the key,
+   the env var is missing. Fix by running `openclaw onboard` once.
+
+2. **The MiniMax HTTP endpoint is unreachable.**
+   ```bash
+   curl -sS -H "Authorization: Bearer $MINIMAX_API_KEY"      https://www.minimax.io/v1/token_plan/remains | head -50
+   ```
+   Check MiniMax's status page if this fails.
+
+3. **The provider is filtered by `providerHasData()` in Main.qml.**
+   The collector must write `minimaxAvailable: true` AND non-empty
+   `minimaxTokenPlan` for the dock to show the circle.
 ## See also
 
 - `architecture.md` — how collectors fit together

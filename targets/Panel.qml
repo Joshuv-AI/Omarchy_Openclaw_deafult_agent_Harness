@@ -380,6 +380,7 @@ Panel {
       "openclaw": "#7C3AED",
       "fireworks": "#FF6B35",
       "hermes": "#D4AF37",
+      "minimax": "#FF0000",
       "copilot": "#6e40c9",
       "crush": "#ec4899",
       "omp": "#6b7280",
@@ -845,6 +846,7 @@ Panel {
             readonly property var days: root.provider ? (root.provider.recentDays || []) : []
             readonly property real peak: Math.max(1, root.weekPeak(root.provider))
             readonly property bool isOpenClaw: root.provider ? (root.provider.providerId === "openclaw") : false
+    readonly property bool isMiniMax: root.provider ? (root.provider.providerId === "minimax") : false
 
             // ---- OpenClaw custom lines (single-line ternaries, no JS blocks) ----
             Text {
@@ -893,7 +895,7 @@ Panel {
               font.pixelSize: Style.font.caption
             }
 
-            // ---- OpenClaw + MiniMax Token Plan lines (only when live data available) ----
+            // ---- MiniMax Token Plan lines (only when MiniMax is the active provider with live data) ----
             Text {
               visible: usageSection.isOpenClaw && root.provider && root.provider.gatewayState === "active"
               width: parent.width
@@ -905,7 +907,7 @@ Panel {
 
             // ---- MiniMax usage block (MiniMax-site style: limit label + reset + progress bar + percent used) ----
             Column {
-              visible: usageSection.isOpenClaw && root.provider && root.provider.gatewayState === "active" && root.provider.minimaxAvailable === true
+              visible: usageSection.isMiniMax && root.provider && root.provider.gatewayState === "active" && root.provider.minimaxAvailable === true
               width: parent.width
               spacing: Style.space(10)
               topPadding: Style.space(2)

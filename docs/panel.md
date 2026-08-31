@@ -93,6 +93,7 @@ sessions, MiniMax token plan). See `manifest.json` for the full list.
 | `codex` | `#10A37F` | `codex.svg` | ships with Omarchy | (via `codex` CLI) |
 | `fireworks` | `#FF6B35` | `fireworks.svg` | ships with Omarchy | (via `fireworks` CLI) |
 | `openclaw` | `#7C3AED` | `openclaw.svg` | **ships with this package** | (handled by `openclaw onboard`) |
+| `minimax` | `#FF0000` | `minimax.svg` | **ships with this package** | `MINIMAX_API_KEY` in `~/.openclaw/.env` (auto-set by `openclaw onboard`) |
 | `hermes` | `#D4AF37` | `hermes.svg` | **ships with this package** | `curl -fsSL https://hermes-agent.nousresearch.com/install.sh` + `hermes setup --portal` |
 | `grok` | `#8B8B8B` | `grok.svg` | **ships with this package** | `XAI_API_KEY` |
 | `gemini` | `#4285F4` | `gemini.svg` | **ships with this package** | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |

@@ -78,6 +78,7 @@ unchanged. Total up to six providers:
 | hermes | this package | `curl .../install.sh | bash` + `hermes setup --portal` |
 | grok | this package | `XAI_API_KEY` env var |
 | gemini | this package | `GEMINI_API_KEY` or `GOOGLE_API_KEY` env var |
+| minimax | this package | `MINIMAX_API_KEY` in `~/.openclaw/.env` (shared with OpenClaw) |
 
 `targets/manifest.json` enables all six by default in the panel's
 `defaults.providers`. The dock only shows a provider once its

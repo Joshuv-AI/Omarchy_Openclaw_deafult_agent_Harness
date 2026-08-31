@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Collect MiniMax token-usage data for the Omarchy agents panel.
+
+Queries MiniMax's `/v1/token_plan/remains` endpoint, which returns the
+account's remaining credits and the reset windows for the 5h interval
+and the weekly cycle. Same shape as the OpenClaw collector used to
+write before token-usage was split out into this dedicated provider.
+
+Reads:
+  - ~/.openclaw/.env (for MINIMAX_API_KEY — shared with OpenClaw onboard)
+
+Writes:
+  - ~/.local/state/omarchy/agents/usage/minimax.json
+    One JSON record the panel reads as provider data.
+
+Output schema matches the panel's `providerColorFor` + MiniMax display
+block (which uses mmIntervalFraction / mmIntervalPct / mmIntervalReset
+helpers already in Panel.qml).
+"""
+# omarchy:summary=Print MiniMax token usage as JSON
+# omarchy:args=[--force]
+# omarchy:hidden=true
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+AGENT_ID = "minimax"
+AGENT_NAME = "MiniMax"
+USAGE_DIR = Path(
+    os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")
+) / "omarchy" / "agents" / "usage"
+USAGE_FILE = USAGE_DIR / f"{AGENT_ID}.json"
+ENV_FILE = Path.home() / ".openclaw" / ".env"
+API_BASE = "https://www.minimax.io/v1"
+API_TIMEOUT_SECONDS = 8
+
+
+def read_api_key():
+    """Read MINIMAX_API_KEY from ~/.openclaw/.env. Returns '' if not set."""
+    if not ENV_FILE.exists():
+        return ""
+    try:
+        text = ENV_FILE.read_text(errors="replace")
+    except Exception:
+        return ""
+    for line in text.splitlines():
+        m = re.match(r"^\s*(?:export\s+)?MINIMAX_API_KEY\s*=\s*(\S+)\s*$", line)
+        if m:
+            return m.group(1).strip().strip('"').strip("'")
+    return ""
+
+
+def fetch_token_plan(api_key):
+    """GET /v1/token_plan/remains with Bearer auth. Returns parsed JSON or raises."""
+    req = urllib.request.Request(
+        f"{API_BASE}/token_plan/remains",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    with urllib.request.urlopen(req, timeout=API_TIMEOUT_SECONDS) as resp:
+        body = resp.read().decode("utf-8", errors="replace")
+        return json.loads(body) if body else {}
+
+
+def normalize_plan(raw):
+    """Pick the `general` and `video` plans out of the response, in the
+    shape Panel.qml's mmIntervalFraction / mmWeeklyFraction expect.
+    """
+    general = raw.get("general") if isinstance(raw, dict) else None
+    video = raw.get("video") if isinstance(raw, dict) else None
+    return {
+        "general": general if isinstance(general, dict) else None,
+        "video": video if isinstance(video, dict) else None,
+    }
+
+
+def main():
+    USAGE_DIR.mkdir(parents=True, exist_ok=True)
+    record = {
+        "id": AGENT_ID,
+        "name": AGENT_NAME,
+        "schemaVersion": 1,
+        "provider": "minimax",
+        "ready": False,
+        "installed": True,
+        "version": "",
+        "activeModel": "",
+        "minimaxAvailable": False,
+        "minimaxError": "",
+        "minimaxTokenPlan": {"general": None, "video": None},
+        "minimaxSummary5h": "",
+        "minimaxSummaryWeekly": "",
+        "minimaxSummaryReset": "",
+        "minimaxFetchedAt": "",
+        "authHelpText": "",
+    }
+
+    api_key = read_api_key()
+    if not api_key:
+        record["authHelpText"] = (
+            "Set MINIMAX_API_KEY in ~/.openclaw/.env to enable MiniMax token-usage data. "
+            "Usually configured by running `openclaw onboard` once."
+        )
+        USAGE_FILE.write_text(json.dumps(record, indent=2))
+        return
+
+    try:
+        raw = fetch_token_plan(api_key)
+    except urllib.error.HTTPError as e:
+        record["authHelpText"] = f"MiniMax API error: HTTP {e.code}"
+        USAGE_FILE.write_text(json.dumps(record, indent=2))
+        return
+    except Exception as e:
+        record["authHelpText"] = f"MiniMax API error: {e}"
+        USAGE_FILE.write_text(json.dumps(record, indent=2))
+        return
+
+    plan = normalize_plan(raw)
+    record["minimaxAvailable"] = bool(plan["general"] or plan["video"])
+
+    # The OpenClaw collector's old output had a `summary5h` /
+    # `summaryWeekly` / `summaryReset` shorthand. Recreate them here
+    # from the plan so Panel.qml's display helpers can use them
+    # unchanged. Fall back to empty string if the plan is missing.
+    general = plan["general"] or {}
+    video = plan["video"] or {}
+    record["minimaxTokenPlan"] = plan
+    record["minimaxSummary5h"] = str(general.get("intervalRemainingPct", ""))
+    record["minimaxSummaryWeekly"] = str(general.get("weeklyRemainingPct", ""))
+    record["minimaxSummaryReset"] = (
+        f"5h: {general.get('intervalResetHuman', '—')} · "
+        f"wk: {general.get('weeklyResetHuman', '—')}"
+    )
+    record["minimaxFetchedAt"] = raw.get("fetchedAt", "") if isinstance(raw, dict) else ""
+
+    # If either window is "unlimited" (weekly pct == 100 with no cap),
+    # the panel renders it as "∞ Unlimited" via mmWeeklyIsUnlimited.
+    # No special-case here — the helper just checks pct >= 100.
+
+    record["ready"] = record["minimaxAvailable"]
+    USAGE_FILE.write_text(json.dumps(record, indent=2))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"omarchy-agent-usage-minimax: {e!r}", file=sys.stderr)
+        sys.exit(0)

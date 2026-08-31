@@ -151,7 +151,7 @@ echo
 echo "[4/8] SVG assets..."
 # All 8 provider icons. The dock renders the center icon greied and the ring
 # in the provider's brand color, so all icons use a uniform greied fill here.
-for svg in claude.svg codex.svg codex-light.svg fireworks.svg grok.svg gemini.svg hermes.svg openclaw.svg openclaw-light.svg; do
+for svg in claude.svg codex.svg codex-light.svg fireworks.svg grok.svg gemini.svg hermes.svg minimax.svg openclaw.svg openclaw-light.svg; do
     if [ -f "$ASSET_DST_DIR/$svg" ] && cmp -s "$ASSET_SRC_DIR/$svg" "$ASSET_DST_DIR/$svg"; then
         echo "    $svg: already current."
     else

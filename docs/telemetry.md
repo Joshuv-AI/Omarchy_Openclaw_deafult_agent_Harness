@@ -12,6 +12,10 @@ machine is reporting to the panel.
 |---|---|---|
 | `~/.openclaw/.env` | API key variable NAMES (presence only — never the values) | User's home |
 | `~/.openclaw/crestodian/sessions/*.trajectory.jsonl` | Per-step OpenClaw trajectory entries (model usage, prompts, sessions) | User's home |
+
+Note: OpenClaw's collector no longer queries MiniMax directly. Token-usage
+data moved to `omarchy-agent-usage-minimax` so the model data lives with
+the model, not the agent.
 | `~/.openclaw/tui/last-session.json` | Most recently updated session ID | User's home |
 | `systemctl --user is-active openclaw-gateway.service` | Active/inactive state | User systemd |
 | `systemctl --user show openclaw-gateway.service --property=ActiveEnterTimestamp` | Gateway start time | User systemd |
@@ -61,6 +65,18 @@ When neither key is set, the collector writes a minimal record with
 The collector deliberately writes **no `recentDays`, no `limits`, no `modelUsage`** —
 Hermes has no token-usage tracking. The dock ring fill falls through to the
 connection-state fallback in `Panel.qml` (full when `gatewayState: "active"`).
+
+
+### `omarchy-agent-usage-minimax` (only writes when API key is set)
+
+| Source | What it reads | Where it lives |
+|---|---|---|
+| `~/.openclaw/.env` | `MINIMAX_API_KEY=*** | User's home (managed by `openclaw onboard`) |
+| `GET https://www.minimax.io/v1/token_plan/remains` | 5h + weekly token plan (remaining %, reset times) | MiniMax network |
+
+No subprocess calls. Pure HTTP. The collector writes to a SEPARATE
+JSON file (`minimax.json`) so the MiniMax panel tab is independent of
+the OpenClaw tab.
 
 ## Data outputs
 
