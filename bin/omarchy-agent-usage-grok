@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""Collect xAI Grok rate-limit data for the Omarchy agents panel.
+
+Queries xAI's GET /v1/api-key endpoint which returns:
+  - id, name, api_key_blocked, api_key_flags, user_id
+  - usage (account-level aggregate)
+  - per_resource[] — per-model rate limits (rpm/rpd/tpm/tpd)
+
+Output JSON matches the schema documented in the omarchy-integration
+manifest.json (outputSchema block). The agent panel reads id, name,
+version, activeModel, limits[], recentDays[], modelUsage{}, ready,
+installed, etc.
+"""
+# omarchy:summary=Print xAI Grok usage as JSON
+# omarchy:args=[--force]
+# omarchy:hidden=true
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+AGENT_ID = "grok"
+AGENT_NAME = "Grok"
+USAGE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "omarchy" / "agents" / "usage"
+USAGE_FILE = USAGE_DIR / f"{AGENT_ID}.json"
+API_BASE = "https://api.x.ai/v1"
+SUBPROCESS_TIMEOUT_SECONDS = 8
+
+
+def get_api_key():
+    """Read XAI_API_KEY from environment. Returns None if not set."""
+    key = os.environ.get("XAI_API_KEY", "").strip()
+    return key or None
+
+
+def http_get_json(url, headers=None, timeout=SUBPROCESS_TIMEOUT_SECONDS):
+    """HTTP GET returning (status_code, parsed_body_or_None)."""
+    req = urllib.request.Request(url, headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            return resp.status, (json.loads(body) if body else None)
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+            return e.code, (json.loads(body) if body else None)
+        except Exception:
+            return e.code, None
+    except Exception:
+        return None, None
+
+
+def fetch_api_key_info(api_key):
+    """GET /v1/api-key — returns the parsed xAI key info dict."""
+    status, body = http_get_json(
+        f"{API_BASE}/api-key",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    if status != 200 or not isinstance(body, dict):
+        raise RuntimeError(f"xAI API returned HTTP {status}: {body}")
+    return body
+
+
+def _empty_record():
+    """Minimum-viable record when no API key / failed auth — provider still listed."""
+    return {
+        "id": AGENT_ID,
+        "name": AGENT_NAME,
+        "schemaVersion": 1,
+        "provider": "xai",
+        "ready": False,
+        "installed": True,
+        "version": "",
+        "activeModel": "",
+        "limits": [],
+        "recentDays": [],
+        "modelUsage": {},
+        "todayPrompts": 0,
+        "todaySessions": 0,
+        "todayTotalTokens": 0,
+        "totalPrompts": 0,
+        "totalSessions": 0,
+        "activeDays": 0,
+        "activeDates": [],
+        "avgContext": 0,
+        "cacheRatio": 0,
+        "balance": None,
+    }
+
+
+def main():
+    USAGE_DIR.mkdir(parents=True, exist_ok=True)
+    record = _empty_record()
+
+    api_key = get_api_key()
+    if not api_key:
+        record["authHelpText"] = (
+            "Set XAI_API_KEY in your environment to enable Grok rate-limit data. "
+            "Get a key at https://console.x.ai"
+        )
+        USAGE_FILE.write_text(json.dumps(record, indent=2))
+        return
+
+    try:
+        info = fetch_api_key_info(api_key)
+    except Exception as e:
+        record["authHelpText"] = f"xAI API error: {e}"
+        USAGE_FILE.write_text(json.dumps(record, indent=2))
+        return
+
+    # xAI /v1/api-key response shape:
+    # {
+    #   "id": "...", "name": "...", "api_key_blocked": false,
+    #   "api_key_flags": [], "user_id": "...",
+    #   "per_resource": [
+    #     {"resource_type": "chat", "model": "grok-4", "rpm": 60, "rpd": null,
+    #      "tpm": 60000, "tpd": null},
+    #     ...
+    #   ],
+    #   "usage": {"credits": ..., "monthly": {...}}
+    # }
+    per_resource = info.get("per_resource") or []
+    limits = []
+    active_model = ""
+    for r in per_resource:
+        model = (r.get("model") or "").strip()
+        rtype = (r.get("resource_type") or "").strip()
+        title = model + (f" ({rtype})" if rtype else "")
+        # xAI exposes capacity (rpm/rpd/tpm/tpd) but not per-resource usage,
+        # so percent stays -1 (panel renders "—" instead of a bar fill).
+        # Account-level usage is in info["usage"] but doesn't break down per
+        # resource, so we leave it for future enhancement.
+        limits.append({
+            "title": title,
+            "percent": -1,
+            "model": model,
+            "resourceType": rtype,
+            "rpmLimit": r.get("rpm"),
+            "rpdLimit": r.get("rpd"),
+            "tpmLimit": r.get("tpm"),
+            "tpdLimit": r.get("tpd"),
+        })
+        if not active_model and model:
+            active_model = model
+
+    blocked = bool(info.get("api_key_blocked"))
+    record.update({
+        "ready": not blocked,
+        "version": "xAI API",
+        "activeModel": active_model,
+        "limits": limits,
+        "authHelpText": (
+            "xAI API key is blocked. Resolve at https://console.x.ai"
+            if blocked else ""
+        ),
+    })
+    USAGE_FILE.write_text(json.dumps(record, indent=2))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"omarchy-agent-usage-grok: {e!r}", file=sys.stderr)
+        sys.exit(0)

@@ -4,11 +4,13 @@
 # What it does:
 #   1. Detects OpenClaw; if missing, runs the official OpenClaw installer
 #   2. Runs `openclaw onboard` for API key setup (handled by OpenClaw itself)
-#   3. Copies the collector script + lobster SVG assets
-#   4. Backs up + patches Panel.qml + Main.qml (OpenClaw display block)
-#   5. Adds OpenClaw entry to the super space menu (agents submenu)
-#   6. Asks if you want OpenClaw as your default agent
-#   7. Reloads Quickshell
+#   3. Copies the collector scripts (openclaw, grok, gemini)
+#   4. Copies the SVG assets (8 provider icons, all greied — ring color is
+#      brand, center icon is greied)
+#   5. Backs up + patches Panel.qml + Main.qml + manifest.json
+#   6. Adds OpenClaw entry to the super space menu (agents submenu)
+#   7. Asks if you want OpenClaw as your default agent
+#   8. Reloads Quickshell
 #
 # Idempotent — safe to re-run. Re-run after `omarchy-update`.
 set -euo pipefail
@@ -16,16 +18,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # === Paths ===
-COLLECTOR_SRC="$SCRIPT_DIR/bin/omarchy-agent-usage-openclaw"
-COLLECTOR_DST="/usr/bin/omarchy-agent-usage-openclaw"
 ASSET_SRC_DIR="$SCRIPT_DIR/assets"
 ASSET_DST_DIR="/usr/share/omarchy/shell/plugins/agents/assets"
 PANEL_DST="/usr/share/omarchy/shell/plugins/agents/Panel.qml"
 MAIN_DST="/usr/share/omarchy/shell/plugins/agents/Main.qml"
+MANIFEST_DST="/usr/share/omarchy/shell/plugins/agents/manifest.json"
 PANEL_BACKUP="${PANEL_DST}.openclaw-backup"
 MAIN_BACKUP="${MAIN_DST}.openclaw-backup"
+MANIFEST_BACKUP="${MANIFEST_DST}.openclaw-backup"
 PANEL_TARGET="$SCRIPT_DIR/targets/Panel.qml"
 MAIN_TARGET="$SCRIPT_DIR/targets/Main.qml"
+MANIFEST_TARGET="$SCRIPT_DIR/targets/manifest.json"
 MENU_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/extensions/omarchy-menu.jsonc"
 DEFAULT_AGENT_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/defaults/agent"
 
@@ -34,7 +37,7 @@ echo "==========================="
 echo
 
 # --- 0. OpenClaw presence check + official install if missing ---
-echo "[0/6] OpenClaw installation check..."
+echo "[0/7] OpenClaw installation check..."
 if ! command -v openclaw >/dev/null 2>&1; then
     echo "    OpenClaw not found."
     echo
@@ -62,7 +65,7 @@ fi
 
 # --- 1. OpenClaw onboarding (API key setup) ---
 echo
-echo "[1/6] Running openclaw onboard (API key setup)..."
+echo "[1/7] Running openclaw onboard (API key setup)..."
 if command -v openclaw >/dev/null 2>&1; then
     # openclaw onboard is interactive — runs in the user's terminal.
     # It walks through API key configuration and any other setup.
@@ -78,22 +81,35 @@ if command -v openclaw >/dev/null 2>&1; then
     fi
 fi
 
-# --- 2. Collector script ---
+# --- 2. Collector scripts ---
 echo
-echo "[2/6] Collector script..."
-if [ -f "$COLLECTOR_DST" ] && cmp -s "$COLLECTOR_SRC" "$COLLECTOR_DST"; then
-    echo "    Already installed and current. Skipping."
-else
-    sudo cp "$COLLECTOR_SRC" "$COLLECTOR_DST"
-    sudo chown root:root "$COLLECTOR_DST"
-    sudo chmod 755 "$COLLECTOR_DST"
-    echo "    Installed at $COLLECTOR_DST"
-fi
+echo "[2/7] Collector scripts..."
+# All three collectors ship in this package. openclaw is always installed.
+# grok and gemini activate only when the corresponding API key env var is set,
+# but the binaries are installed regardless so a fresh user can set keys later.
+for collector in omarchy-agent-usage-openclaw omarchy-agent-usage-grok omarchy-agent-usage-gemini; do
+    src="$SCRIPT_DIR/bin/$collector"
+    dst="/usr/bin/$collector"
+    if [ ! -f "$src" ]; then
+        echo "    $collector: source missing at $src. Skipping."
+        continue
+    fi
+    if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+        echo "    $collector: already current."
+    else
+        sudo cp "$src" "$dst"
+        sudo chown root:root "$dst"
+        sudo chmod 755 "$dst"
+        echo "    Installed $collector"
+    fi
+done
 
 # --- 3. SVG assets ---
 echo
-echo "[3/6] Lobster SVG assets..."
-for svg in openclaw.svg openclaw-light.svg; do
+echo "[3/7] SVG assets..."
+# All 8 provider icons. The dock renders the center icon greied and the ring
+# in the provider's brand color, so all icons use a uniform greied fill here.
+for svg in claude.svg codex.svg codex-light.svg fireworks.svg grok.svg gemini.svg openclaw.svg openclaw-light.svg; do
     if [ -f "$ASSET_DST_DIR/$svg" ] && cmp -s "$ASSET_SRC_DIR/$svg" "$ASSET_DST_DIR/$svg"; then
         echo "    $svg: already current."
     else
@@ -104,10 +120,13 @@ for svg in openclaw.svg openclaw-light.svg; do
     fi
 done
 
-# --- 4. Panel.qml + Main.qml (backup + replace) ---
+# --- 4. Panel.qml + Main.qml + manifest.json (backup + integrate) ---
 echo
-echo "[4/6] Panel.qml + Main.qml (backup + integrate)..."
-for entry in "$PANEL_DST:$PANEL_BACKUP:$PANEL_TARGET" "$MAIN_DST:$MAIN_BACKUP:$MAIN_TARGET"; do
+echo "[4/7] Panel.qml + Main.qml + manifest.json..."
+for entry in \
+  "$PANEL_DST:$PANEL_BACKUP:$PANEL_TARGET" \
+  "$MAIN_DST:$MAIN_BACKUP:$MAIN_TARGET" \
+  "$MANIFEST_DST:$MANIFEST_BACKUP:$MANIFEST_TARGET"; do
     IFS=':' read -r dst backup src <<< "$entry"
     name=$(basename "$dst")
     if [ ! -f "$dst" ]; then
@@ -128,7 +147,7 @@ done
 
 # --- 5. Super space menu entry (agents → OpenClaw) ---
 echo
-echo "[5/6] Super space menu entry..."
+echo "[5/7] Super space menu entry..."
 mkdir -p "$(dirname "$MENU_CONFIG")"
 if [ ! -f "$MENU_CONFIG" ]; then
     cat > "$MENU_CONFIG" <<'EOF'
@@ -169,7 +188,7 @@ fi
 
 # --- 6. Default agent (interactive) ---
 echo
-echo "[6/6] Default agent (optional)..."
+echo "[6/7] Default agent (optional)..."
 mkdir -p "$(dirname "$DEFAULT_AGENT_FILE")"
 current_default=$(cat "$DEFAULT_AGENT_FILE" 2>/dev/null || echo "")
 if [ "$current_default" = "openclaw" ]; then
@@ -184,9 +203,9 @@ else
     fi
 fi
 
-# --- Reload Quickshell ---
+# --- 7. Reload Quickshell ---
 echo
-echo "Reloading Quickshell..."
+echo "[7/7] Reloading Quickshell..."
 QSPID=$(pgrep -f "quickshell -n -p /usr/share/omarchy/shell" | head -1 || true)
 if [ -n "$QSPID" ]; then
     kill -TERM "$QSPID" 2>/dev/null || true
@@ -199,14 +218,17 @@ fi
 echo
 echo "═══════════════════════════════════════"
 echo "Done! Open the agents panel (top-right):"
-echo "  - You should see an 'OpenClaw' tab in the provider switcher"
-echo "  - Inside the tab: Gateway active, version, model, runtime, Discord,"
-echo "    Total sessions (all live)"
-echo "  - Super space, agents, OpenClaw (in the Quickshell menu)"
+echo "  - One circle per connected provider in the dock"
+echo "  - Click a circle to open the panel focused on that provider"
+echo "  - Double-click the dock to toggle ring colors on/off"
+echo
+echo "Grok + Gemini collectors are installed but won't appear in the dock"
+echo "until you set their API key env vars (then restart Quickshell):"
+echo "  export XAI_API_KEY=***       # Grok"
+echo "  export GEMINI_API_KEY=***   # Gemini (or GOOGLE_API_KEY)"
 echo
 echo "If the panel doesn't update, restart Quickshell manually:"
 echo "  pkill -TERM -f 'quickshell -n -p /usr/share/omarchy/shell'"
-echo "  (Hyprland will auto-restart it)"
 echo
 echo "To uninstall: ./uninstall.sh"
 echo "═══════════════════════════════════════"

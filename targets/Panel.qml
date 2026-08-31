@@ -1,7 +1,3 @@
-// === OPENCLAW_INTEGRATION_V1 ===
-// This file is patched by the omarchy-openclaw-integration extension.
-// To uninstall: see /usr/share/omarchy/extensions/openclaw-integration/uninstall.sh
-// ===============================
 import QtQuick
 import QtQuick.Controls
 import Quickshell
@@ -55,6 +51,72 @@ Panel {
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
   function alpha(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
+
+  // Human-readable countdown from milliseconds: "2h 13min", "1d 4h", "5min", "now".
+  function minsToHuman(ms) {
+    if (!isFinite(ms) || ms <= 0) return "now"
+    var totalMins = Math.floor(ms / 60000)
+    var days = Math.floor(totalMins / 1440)
+    var hours = Math.floor((totalMins % 1440) / 60)
+    var mins = totalMins % 60
+    if (days > 0) return days + "d " + hours + "h"
+    if (hours > 0) return hours + "h " + mins + "min"
+    return mins + "min"
+  }
+
+  // Pick the primary model (general = the main LLM; fall back to video).
+  function minimaxModel(provider) {
+    if (!provider || !provider.minimaxTokenPlan) return null
+    return provider.minimaxTokenPlan.general || provider.minimaxTokenPlan.video || null
+  }
+
+  // MiniMax row helpers — kept out of inline bindings because QML's JS
+  // dialect treats `{ var ...; return ...; }` as an object literal in some
+  // expression positions, which can silently break the whole plugin.
+  function mmIntervalReset(provider) {
+    var m = minimaxModel(provider)
+    if (!m || !m.intervalWindowEnd) return "—"
+    return "Resets in " + minsToHuman(m.intervalWindowEnd - nowMs)
+  }
+  function mmWeeklyReset(provider) {
+    var m = minimaxModel(provider)
+    if (!m || !m.weeklyWindowEnd) return "—"
+    return "Resets in " + minsToHuman(m.weeklyWindowEnd - nowMs)
+  }
+  function mmIntervalFraction(provider) {
+    var m = minimaxModel(provider)
+    if (!m) return 0
+    return Math.max(0, Math.min(1, (100 - (m.intervalRemainingPct || 0)) / 100))
+  }
+  function mmWeeklyFraction(provider) {
+    var m = minimaxModel(provider)
+    if (!m) return 0
+    return Math.max(0, Math.min(1, (100 - (m.weeklyRemainingPct || 0)) / 100))
+  }
+  function mmIntervalPct(provider) {
+    var m = minimaxModel(provider)
+    return m ? ((m.intervalRemainingPct || 0) + "% left") : "—"
+  }
+  function mmIntervalUsed(provider) {
+    var m = minimaxModel(provider)
+    return m ? ("Used " + (100 - (m.intervalRemainingPct || 0)) + "%") : "—"
+  }
+  function mmWeeklyPct(provider) {
+    var m = minimaxModel(provider)
+    if (!m) return "—"
+    var pct = m.weeklyRemainingPct || 0
+    return pct >= 100 ? "∞ Unlimited" : (pct + "% left")
+  }
+  function mmWeeklyUsed(provider) {
+    var m = minimaxModel(provider)
+    if (!m) return "—"
+    var pct = m.weeklyRemainingPct || 0
+    return pct >= 100 ? "Token Plan" : ("Used " + (100 - pct) + "%")
+  }
+  function mmWeeklyIsUnlimited(provider) {
+    var m = minimaxModel(provider)
+    return !!(m && (m.weeklyRemainingPct || 0) >= 100)
+  }
 
   function selectProvider(index) {
     if (providers.length === 0) return
@@ -301,12 +363,58 @@ Panel {
     return candidates
   }
 
+  // Active providers as an array — `providers` is already the filtered
+  // `enabledProviders` array from Main, so just reference it directly.
+  readonly property var providerList: providers || []
+
+  // Brand color per provider — used for the dock progress ring.
+  function providerColorFor(idx) {
+    if (!providerList[idx]) return "#888888";
+    var id = String(providerList[idx].providerId || "");
+    var colors = {
+      "claude": "#D97757",
+      "codex": "#10A37F",
+      "openai": "#10A37F",
+      "grok": "#8B8B8B",
+      "gemini": "#4285F4",
+      "openclaw": "#7C3AED",
+      "fireworks": "#FF6B35"
+    };
+    return colors[id] || "#888888";
+  }
+
+  // SVG asset path for a provider's dock icon.
+  function providerIconPath(idx) {
+    if (!providerList[idx]) return "";
+    var id = String(providerList[idx].providerId || "");
+    return "assets/" + id + ".svg";
+  }
+
+  // Fraction (0..1) of the most-urgent rate-limit interval used.
+  // Looks at the shortest available interval (5h, daily — never weekly).
+  function providerIntervalFraction(idx) {
+    if (!providerList[idx]) return 0;
+    var p = providerList[idx];
+    var usedPercents = [];
+    if (p.minimaxTokenPlan && p.minimaxTokenPlan.general && p.minimaxTokenPlan.general.intervalRemainingPct !== undefined) {
+      usedPercents.push(1 - p.minimaxTokenPlan.general.intervalRemainingPct / 100);
+    }
+    if (p.intervalRemainingPct !== undefined) {
+      usedPercents.push(1 - p.intervalRemainingPct / 100);
+    }
+    if (p.dailyRemainingPct !== undefined) {
+      usedPercents.push(1 - p.dailyRemainingPct / 100);
+    }
+    if (usedPercents.length === 0) return 0;
+    return Math.max.apply(null, usedPercents);
+  }
+
   // Nothing to report, nothing in the bar: Bar.qml collapses a slot whose item
   // is invisible, so the icon appears the moment the first scan finds usage and
   // stays away entirely on a machine that has never run either CLI.
   visible: providers.length > 0
-  implicitWidth: button.implicitWidth
-  implicitHeight: button.implicitHeight
+  implicitWidth: dock.implicitWidth
+  implicitHeight: dock.implicitHeight
 
   onProviderIndexChanged: if (panelFlick) panelFlick.contentY = 0
   onOpenedChanged: if (opened) {
@@ -342,22 +450,117 @@ Panel {
     function next(): string { root.selectProvider(root.providerIndex + 1); return "ok" }
   }
 
-  BarIconButton {
-    id: button
-    anchors.fill: parent
-    bar: root.bar
-    text: "󱚣"
-    active: root.alarming
-    onPressed: function(buttonCode) {
-      if (buttonCode === Qt.RightButton) root.launchAgent()
-      else if (buttonCode === Qt.MiddleButton) root.selectProvider(root.providerIndex + 1)
-      else root.toggle()
+  // Provider icons dock — one circle per active provider, grows horizontally.
+  // Double-click anywhere on this dock toggles color rings on/off.
+  Item {
+    id: dock
+
+    property bool colorsEnabled: true
+    readonly property int circleSize: 22
+    readonly property int circleSpacing: 4
+
+    // Re-paint rings every 30s so the fraction stays fresh with collector updates.
+    Timer {
+      interval: 30000
+      running: true
+      repeat: true
+      onTriggered: dock.requestPaint()
+    }
+
+    function requestPaint() {
+      for (var i = 0; i < providerRepeater.count; i++) {
+        var item = providerRepeater.itemAt(i)
+        if (item && item.ringCanvas) item.ringCanvas.requestPaint()
+      }
+    }
+
+    implicitWidth: root.providerList.length * (circleSize + circleSpacing) + circleSpacing
+    implicitHeight: circleSize + 2
+
+    TapHandler {
+      onTapped: {
+        if (count === 2) dock.colorsEnabled = !dock.colorsEnabled
+      }
+    }
+
+    Row {
+      anchors.centerIn: parent
+      spacing: dock.circleSpacing
+
+      Repeater {
+        id: providerRepeater
+        model: root.providerList
+
+        Item {
+          width: dock.circleSize
+          height: dock.circleSize
+
+          Rectangle {
+            anchors.fill: parent
+            radius: width / 2
+            color: "#1a1a1a"
+            opacity: 0.6
+          }
+
+          Canvas {
+            id: ringCanvas
+            anchors.fill: parent
+            antialiasing: true
+            onPaint: {
+              var ctx = getContext("2d");
+              ctx.reset();
+              var ringColor = dock.colorsEnabled ? root.providerColorFor(index) : "#666666";
+              var radius = (Math.min(width, height) - 4) / 2;
+              var cx = width / 2;
+              var cy = height / 2;
+              var fraction = Math.max(0, Math.min(1, root.providerIntervalFraction(index)));
+              // Background ring (dimmer)
+              ctx.strokeStyle = Qt.darker(ringColor, 3);
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
+              ctx.stroke();
+              // Foreground arc (filled portion)
+              if (fraction > 0) {
+                ctx.strokeStyle = ringColor;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * fraction);
+                ctx.stroke();
+              }
+            }
+          }
+
+          Image {
+            anchors.centerIn: parent
+            width: dock.circleSize * 0.5
+            height: dock.circleSize * 0.5
+            source: root.providerIconPath(index)
+            fillMode: Image.PreserveAspectFit
+          }
+
+          MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+            onClicked: function(mouse) {
+              if (mouse.button === Qt.RightButton) {
+                root.launchAgent()
+              } else if (mouse.button === Qt.MiddleButton) {
+                root.selectProvider(root.providerIndex + 1)
+              } else {
+                root.selectProvider(index)
+                root.toggle()
+              }
+            }
+          }
+        }
+      }
     }
   }
 
   KeyboardPanel {
     id: panel
-    anchorItem: button
+    anchorItem: dock
     owner: root
     bar: root.bar
     open: root.opened
@@ -445,7 +648,7 @@ Panel {
                 Text {
                   anchors.centerIn: parent
                   visible: heroMarkImage.status !== Image.Ready
-                  text: button.text
+                  text: "󱚣"
                   color: root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.display
@@ -618,7 +821,7 @@ Panel {
 
           // ---------- Usage ----------
           PanelSeparator {
-            visible: usageSection.visible
+            visible: usageSection.visible && (!root.provider || root.provider.gatewayState === "active")
             foreground: root.foreground
           }
 
@@ -636,7 +839,7 @@ Panel {
             Text {
               visible: usageSection.isOpenClaw
               width: parent.width
-              text: root.provider ? (root.provider.gatewayState === "active" ? "● Gateway active" : root.provider.gatewayState === "stopped" ? "○ Gateway stopped" : "○ Gateway " + (root.provider.gatewayState || "unknown")) : ""
+              text: root.provider && root.provider.gatewayState === "active" ? "● Gateway active" : "○ Gateway offline"
               color: root.provider && root.provider.gatewayState === "active" ? "#3fb950" : root.provider && root.provider.gatewayState === "stopped" ? "#d29922" : "#f85149"
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -644,7 +847,7 @@ Panel {
             }
 
             Text {
-              visible: usageSection.isOpenClaw
+              visible: usageSection.isOpenClaw && root.provider && root.provider.gatewayState === "active"
               width: parent.width
               text: root.provider ? (root.provider.version || "") : ""
               color: root.dim
@@ -653,7 +856,7 @@ Panel {
             }
 
             Text {
-              visible: usageSection.isOpenClaw
+              visible: usageSection.isOpenClaw && root.provider && root.provider.gatewayState === "active"
               width: parent.width
               text: root.provider ? ("Model: " + (root.provider.activeModel || "—")) : ""
               color: root.dim
@@ -664,7 +867,7 @@ Panel {
             Text {
               visible: usageSection.isOpenClaw
               width: parent.width
-              text: root.provider && root.provider.nodeVersion ? ("Runtime · " + root.provider.nodeVersion + " · PID " + root.provider.openclawPid + " · up " + root.provider.openclawUptime) : ""
+              text: !root.provider || root.provider.gatewayState !== "active" ? "Runtime: offline" : ("Runtime · " + root.provider.nodeVersion + " · PID " + root.provider.openclawPid + " · up " + root.provider.openclawUptime)
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -673,14 +876,15 @@ Panel {
             Text {
               visible: usageSection.isOpenClaw
               width: parent.width
-              text: root.provider ? ("Discord: " + (root.provider.discordStatus || "unknown")) : ""
+              text: !root.provider || root.provider.gatewayState !== "active" ? "Discord: offline" : ("Discord: " + (root.provider.discordStatus || "unknown"))
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
 
+            // ---- OpenClaw + MiniMax Token Plan lines (only when live data available) ----
             Text {
-              visible: usageSection.isOpenClaw && root.provider
+              visible: usageSection.isOpenClaw && root.provider && root.provider.gatewayState === "active"
               width: parent.width
               text: root.provider ? ("Total sessions: " + Number(root.provider.totalSessions || 0)) : ""
               color: root.dim
@@ -688,6 +892,141 @@ Panel {
               font.pixelSize: Style.font.caption
             }
 
+            // ---- MiniMax usage block (MiniMax-site style: limit label + reset + progress bar + percent used) ----
+            Column {
+              visible: usageSection.isOpenClaw && root.provider && root.provider.gatewayState === "active" && root.provider.minimaxAvailable === true
+              width: parent.width
+              spacing: Style.space(10)
+              topPadding: Style.space(2)
+
+              // ----- 5h limit row -----
+              Row {
+                width: parent.width
+                spacing: Style.spacing.md
+
+                Column {
+                  width: 130
+                  spacing: 2
+                  Text {
+                    text: "5h limit"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: true
+                  }
+                  Text {
+                    text: root.mmIntervalReset(root.provider)
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+
+                Item {
+                  width: parent.width - 130 - 110
+                  height: 10
+                  anchors.verticalCenter: parent.verticalCenter
+                  Rectangle {
+                    anchors.fill: parent
+                    radius: 5
+                    color: Qt.darker(root.foreground, 3.5)
+                    opacity: 0.35
+                  }
+                  Rectangle {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    radius: 5
+                    color: "#3fb950"
+                    width: parent.width * root.mmIntervalFraction(root.provider)
+                  }
+                }
+
+                Column {
+                  width: 110
+                  spacing: 2
+                  Text {
+                    text: root.mmIntervalPct(root.provider)
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: true
+                    horizontalAlignment: Text.AlignRight
+                  }
+                  Text {
+                    text: root.mmIntervalUsed(root.provider)
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    horizontalAlignment: Text.AlignRight
+                  }
+                }
+              }
+
+              // ----- Weekly limit row -----
+              Row {
+                width: parent.width
+                spacing: Style.spacing.md
+
+                Column {
+                  width: 130
+                  spacing: 2
+                  Text {
+                    text: "Weekly limit"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: true
+                  }
+                  Text {
+                    text: root.mmWeeklyReset(root.provider)
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+
+                Item {
+                  width: parent.width - 130 - 110
+                  height: 10
+                  anchors.verticalCenter: parent.verticalCenter
+                  Rectangle {
+                    anchors.fill: parent
+                    radius: 5
+                    color: Qt.darker(root.foreground, 3.5)
+                    opacity: 0.35
+                  }
+                  Rectangle {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    radius: 5
+                    color: root.mmWeeklyIsUnlimited(root.provider) ? "#7c3aed" : "#3fb950"
+                    width: parent.width * root.mmWeeklyFraction(root.provider)
+                  }
+                }
+
+                Column {
+                  width: 110
+                  spacing: 2
+                  Text {
+                    text: root.mmWeeklyPct(root.provider)
+                    color: root.mmWeeklyIsUnlimited(root.provider) ? "#7c3aed" : root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: true
+                    horizontalAlignment: Text.AlignRight
+                  }
+                  Text {
+                    text: root.mmWeeklyUsed(root.provider)
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    horizontalAlignment: Text.AlignRight
+                  }
+                }
+              }
+            }
 
           }
 

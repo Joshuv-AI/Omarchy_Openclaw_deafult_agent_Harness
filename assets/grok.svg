@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="#888888">
+  <!-- Grok (xAI) brand mark: stylized X formed by two crossing rounded bars -->
+  <rect x="44" y="108" width="168" height="40" rx="20" ry="20" transform="rotate(-45 128 128)"/>
+  <rect x="44" y="108" width="168" height="40" rx="20" ry="20" transform="rotate(45 128 128)"/>
+</svg>

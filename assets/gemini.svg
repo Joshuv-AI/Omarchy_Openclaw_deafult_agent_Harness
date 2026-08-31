@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="#888888">
+  <!-- Gemini (Google) brand mark: diamond formed by two interlocking triangles -->
+  <path d="M128 24 L232 128 L128 232 L24 128 Z" opacity="0.45"/>
+  <path d="M128 24 L232 128 L128 128 Z"/>
+  <path d="M128 128 L232 128 L128 232 Z" opacity="0.85"/>
+  <path d="M128 128 L128 232 L24 128 Z" opacity="0.7"/>
+  <path d="M24 128 L128 128 L128 24 Z" opacity="0.85"/>
+</svg>

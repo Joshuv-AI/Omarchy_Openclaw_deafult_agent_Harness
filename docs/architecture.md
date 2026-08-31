@@ -2,114 +2,130 @@
 
 ## What this is
 
-A drop-in Omarchy extension that integrates [OpenClaw](https://openclaw.io) into Omarchy's native agents panel. After `./install.sh`, OpenClaw appears as a tab in the panel with live status, and a lobster OpenClaw entry in the super-space menu under **agents**.
+A drop-in Omarchy extension that integrates the OpenClaw agent into
+Omarchy's native agents panel, plus two optional collectors (Grok, Gemini)
+that extend the same panel with xAI and Google AI providers. After
+`./install.sh`:
+
+- The dock shows one circle per connected provider, each with a
+  brand-colored progress ring around a greied-out center icon
+- The popup shows live status, rate limits, and usage for the selected
+  provider
+- OpenClaw specifically gets a dedicated block (gateway state, runtime,
+  Discord, MiniMax token plan) on top of the standard provider display
+- A lobster OpenClaw entry appears in the super-space menu under
+  **agents**
+
+The collectors shipped here (`openclaw`, `grok`, `gemini`) are
+**opt-in**: `openclaw` is the centerpiece, `grok` and `gemini` activate
+only when the corresponding API key env var is set.
 
 ## Components
 
 ```
 openclaw-integration/
-├── manifest.json              Plugin metadata (entry points, permissions, security boundaries)
+├── manifest.json              Plugin metadata (entry points, security boundaries, per-provider outputSchema)
 ├── README.md                   Quick start + verify + uninstall + extending
 ├── LICENSE                     AGPL-3.0
 ├── install.sh                  Idempotent installer
 ├── uninstall.sh                Reversible uninstaller (restores backups)
 ├── bin/
-│   └── omarchy-agent-usage-openclaw
-│                              Collector script — emits JSON for the panel
+│   ├── omarchy-agent-usage-openclaw
+│   │                          Collector for the OpenClaw provider
+│   ├── omarchy-agent-usage-grok
+│   │                          Collector for xAI Grok (requires XAI_API_KEY)
+│   └── omarchy-agent-usage-gemini
+│                              Collector for Google Gemini (requires GEMINI_API_KEY)
 ├── assets/
-│   ├── openclaw.svg            Lobster icon (dark)
-│   └── openclaw-light.svg      Lobster icon (light)
+│   ├── claude.svg              Anthropic brand mark (greyed for dock center)
+│   ├── codex.svg               OpenAI brand mark (greyed for dock center)
+│   ├── codex-light.svg         Light-theme variant (greyed)
+│   ├── fireworks.svg           Fireworks brand mark (greyed)
+│   ├── grok.svg                xAI Grok stylized X (greyed)
+│   ├── gemini.svg              Google Gemini interlocking diamond (greyed)
+│   ├── openclaw.svg            Lobster emoji with grayscale filter
+│   └── openclaw-light.svg      Same, light-theme variant
 ├── targets/
-│   ├── Panel.qml               Omarchy stock + OpenClaw display block (panel body)
-│   └── Main.qml                Omarchy stock + displayProvider() forwards
+│   ├── Panel.qml               Omarchy stock + multi-provider dock + OpenClaw display block
+│   ├── Main.qml                Omarchy stock + displayProvider() forwards
+│   └── manifest.json           Agent panel manifest with 6 enabled providers + 60s refresh default
 ├── docs/
 │   ├── architecture.md         This file
 │   ├── security.md             Threat model + explicit non-goals
 │   ├── telemetry.md            Data flow + cache contract
+│   ├── panel.md                Panel UX, refresh model, dock design, color toggle
 │   └── troubleshooting.md      Common issues + fixes
 └── skill/
-    └── SKILL.md                AI agent maintenance guide
 ```
 
-## Runtime flow
+## Provider model
+
+The Omarchy agents panel auto-discovers any JSON file under
+`~/.local/state/omarchy/agents/usage/*.json`. Each collector writes one
+file. The set of files = the set of providers that appear in the dock
+(after `providerHasData()` filtering in `Main.qml`).
+
+This package ships three collectors. Omarchy's base install already
+ships three more (claude/codex/fireworks) — those continue to work
+unchanged. Total up to six providers:
+
+| Provider | Origin | Activation |
+|---|---|---|
+| claude, codex, fireworks | Omarchy base | CLI tools installed + authenticated |
+| openclaw | this package | `openclaw onboard` |
+| grok | this package | `XAI_API_KEY` env var |
+| gemini | this package | `GEMINI_API_KEY` or `GOOGLE_API_KEY` env var |
+
+`targets/manifest.json` enables all six by default in the panel's
+`defaults.providers`. The dock only shows a provider once its
+collector has written usable data — so providers without configured
+CLIs / API keys stay hidden until set up.
+
+## Dock design
+
+The dock icon area is a horizontal row of circles, one per provider:
 
 ```
-        ┌─────────────────────────────────────┐
-        │  Omarchy agent sweep (every ~30s)  │
-        └──────────────┬──────────────────────┘
-                       │ invokes
-                       ▼
-        ┌──────────────────────────────────────┐
-        │  omarchy-agent-usage-update           │
-        │  /usr/bin/omarchy-agent-usage-update  │
-        └──────────────┬──────────────────────┘
-                       │ forks per collector
-                       ▼
-        ┌──────────────────────────────────────┐
-        │  omarchy-agent-usage-openclaw         │
-        │  (our collector)                       │
-        │                                        │
-        │  1. Reads ~/.openclaw/.env (API keys)  │
-        │  2. Runs `openclaw --version`          │
-        │  3. systemctl is-active openclaw-      │
-        │     gateway.service                    │
-        │  4. Walks ~/.openclaw/crestodian/      │
-        │     sessions/ for trajectory data       │
-        │  5. Emits JSON to stdout                │
-        └──────────────┬──────────────────────┘
-                       │ JSON
-                       ▼
-        ┌──────────────────────────────────────┐
-        │  openclaw.json (cache)                 │
-        │  ~/.local/state/omarchy/agents/usage/  │
-        └──────────────┬──────────────────────┘
-                       │ watched by
-                       ▼
-        ┌──────────────────────────────────────┐
-        │  Omarchy agents panel (Quickshell)    │
-        │  Panel.qml + Main.qml                 │
-        └──────────────────────────────────────┘
+   ┌──┐  ┌──┐  ┌──┐
+   │  │  │  │  │  │   <- provider icon (greied)
+   │  │  │  │  │  │
+   └──┘  └──┘  └──┘
+   ╲╱╲   ╲╱╲   ╲╱╲  <- progress ring (brand color)
 ```
 
-## Why we patch Omarchy-shipped files
+The ring fill shows the most-urgent rate-limit usage. Double-clicking
+anywhere on the row toggles all rings to dim grey `#666`. Single
+click on a circle opens the panel focused on that provider. Right-click
+launches the agent in a terminal (OpenClaw only — other providers
+don't have a CLI launcher). Middle-click cycles through providers.
 
-Omarchy's agents panel reads from `Panel.qml` + `Main.qml` in `/usr/share/omarchy/shell/plugins/agents/`. There's no plugin override mechanism for these files today — agents can be added via the collector mechanism (what we do) but their visual integration requires patching.
-
-We **minimize the patch surface**:
-- `Panel.qml` gets a single block of OpenClaw-custom text + one visibility condition (`isOpenClaw`).
-- `Main.qml` gets a small block of fields forwarded from `record` to `provider` in `displayProvider()`.
-
-Both files are backed up before patching (`*.openclaw-backup`). `uninstall.sh` restores from backup.
-
-## Why a state file for stale-data-fallback
-
-OpenClaw's trajectory, gateway, and version checks can transiently fail (CLI not on PATH yet, service momentarily stopped, etc.). The collector wraps live checks with a state file:
+## Data flow (per minute)
 
 ```
-~/.local/state/omarchy/agents/usage/openclaw.json       # current record (cache)
-~/.local/state/omarchy/agents/usage/openclaw.state.json # last known good record
+1. QML Timer in Main.qml fires every 60s
+2. Spawns omarchy-agent-usage-update
+3. That dispatcher iterates bin/omarchy-agent-usage-* scripts
+4. Each collector queries its source (OpenClaw local files; xAI HTTP;
+   Google HTTP)
+5. Each writes a JSON record to ~/.local/state/omarchy/agents/usage/<id>.json
+6. Main.qml detects the file change → updates agents[] → enabledProviders
+7. Panel.qml's Repeater rebuilds the dock row
+8. dock.requestPaint() redraws the rings every 30s
 ```
 
-On success: write to `openclaw.json` AND `openclaw.state.json`.
-On error (any live check fails): return contents of `openclaw.state.json` instead of zeros.
+Per-collector schemas are documented in `manifest.json`'s
+`entryPoints.<provider>.outputSchema`.
 
-This means a transient failure shows stale-but-correct data instead of "0 sessions / 0 tokens / inactive". The user sees when their data is current vs stale via the `updatedAt` timestamp.
+## Boundaries
 
-## Refresh semantics
+This package does **not**:
 
-- The Omarchy sweeper invokes our collector approximately every 30 seconds.
-- The collector itself has a 20-second "fresh" window — if the sweeper runs more frequently, the collector returns the cached record without re-running live checks.
-- The collector does NOT poll on its own — it's invoked by the sweeper. This keeps the integration passive and reversible.
-
-## Why no Polkit / no service installation
-
-The collector reads `systemctl --user is-active` (user-scope, no root needed) and `pgrep -f` (user-scope). It never creates services, never modifies `/etc/`, never escalates privileges. The panel is read-only over the user's OpenClaw installation.
-
-## Security-relevant boundaries
-
-See [`security.md`](security.md) for the full threat model and explicit non-goals. Short version:
-
-- The integration never collects credentials.
-- The integration never executes remote code.
-- The integration never modifies files outside the install paths listed in `manifest.json`.
-- The integration's "default agent" toggle is opt-in (user is prompted).
+- Replace Omarchy's core shell, bar, or panel code outside the agents
+  plugin
+- Bundle or install the Claude/Codex/Fireworks CLIs (Omarchy ships
+  those)
+- Modify anything outside `/usr/bin/omarchy-agent-usage-*`,
+  `/usr/share/omarchy/shell/plugins/agents/`, and the user's
+  `~/.config/omarchy/`
+- Make outbound network calls itself (only the grok/gemini collectors
+  do, and only when their API keys are set)

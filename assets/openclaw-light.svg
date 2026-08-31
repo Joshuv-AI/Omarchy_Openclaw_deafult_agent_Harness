@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <text x="32" y="48" font-size="52" text-anchor="middle" font-family="Noto Color Emoji,Apple Color Emoji,Segoe UI Emoji,sans-serif">🦞</text>
+  <defs>
+    <filter id="gray" x="0" y="0" width="100%" height="100%">
+      <feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0
+                                           0.299 0.587 0.114 0 0
+                                           0.299 0.587 0.114 0 0
+                                           0     0     0     1 0"/>
+    </filter>
+  </defs>
+  <text x="32" y="48" font-size="52" text-anchor="middle" font-family="Noto Color Emoji,Apple Color Emoji,Segoe UI Emoji,sans-serif" filter="url(#gray)">🦞</text>
 </svg>

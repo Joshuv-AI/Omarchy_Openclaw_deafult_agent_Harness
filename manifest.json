@@ -1,8 +1,8 @@
 {
   "name": "openclaw-integration",
   "displayName": "OpenClaw for Omarchy",
-  "version": "1.0.0",
-  "description": "Install OpenClaw and integrate it into Omarchy's agents panel. Adds an OpenClaw tab showing gateway state, version, active model, runtime, Discord status, and total sessions. Registers a lobster entry in the super space agents submenu. Optionally sets OpenClaw as the default agent.",
+  "version": "2.0.0",
+  "description": "Installs OpenClaw plus two optional collectors (Grok, Gemini) and integrates them into Omarchy's agents panel as a multi-provider dock with brand-colored progress rings. Adds an OpenClaw tab showing gateway state, version, active model, runtime, Discord status, total sessions, and MiniMax token plan. Registers a lobster entry in the super space agents submenu. Optionally sets OpenClaw as the default agent.",
   "author": {
     "name": "OpenClaw for Omarchy contributors"
   },
@@ -10,74 +10,163 @@
   "homepage": "https://openclaw.io",
   "minOmarchyVersion": "2026.08",
   "entryPoints": {
-    "agentCollector": {
-      "path": "bin/omarchy-agent-usage-openclaw",
-      "installPath": "/usr/bin/omarchy-agent-usage-openclaw",
-      "agentId": "openclaw",
-      "agentName": "OpenClaw",
-      "interface": "omarchy-agent-usage",
-      "outputSchema": {
-        "id": "string",
-        "name": "string",
-        "version": "string",
-        "gatewayState": "active|stopped|not-installed|unknown",
-        "activeModel": "string",
-        "currentSessionId": "string",
-        "currentSessionTitle": "string",
-        "currentSessionUpdatedAt": "number",
-        "gatewayStartedAt": "string",
-        "nodeVersion": "string",
-        "openclawPid": "string",
-        "openclawUptime": "string",
-        "discordStatus": "active|not-running|unknown",
-        "ready": "boolean",
-        "hasLocalStats": "boolean",
-        "hasPromptStats": "boolean",
-        "todayPrompts": "number",
-        "todaySessions": "number",
-        "todayTotalTokens": "number",
-        "todayTokensByModel": "object",
-        "recentDays": "array",
-        "totalPrompts": "number",
-        "totalSessions": "number",
-        "activeDays": "number",
-        "activeDates": "array",
-        "modelUsage": "object",
-        "cacheRatio": "number",
-        "avgContext": "number",
-        "limits": "array",
-        "balance": "object|null",
-        "provider": "string",
-        "modelId": "string",
-        "modelApi": "string",
-        "usageStatusText": "string",
-        "authHelpText": "string"
+    "agentCollectors": [
+      {
+        "path": "bin/omarchy-agent-usage-openclaw",
+        "installPath": "/usr/bin/omarchy-agent-usage-openclaw",
+        "agentId": "openclaw",
+        "agentName": "OpenClaw",
+        "interface": "omarchy-agent-usage",
+        "activeByDefault": true,
+        "activation": "openclaw onboard (interactive)",
+        "outputSchema": {
+          "id": "string",
+          "name": "string",
+          "version": "string",
+          "gatewayState": "active|stopped|not-installed|unknown",
+          "activeModel": "string",
+          "currentSessionId": "string",
+          "currentSessionTitle": "string",
+          "currentSessionUpdatedAt": "number",
+          "gatewayStartedAt": "string",
+          "nodeVersion": "string",
+          "openclawPid": "string",
+          "openclawUptime": "string",
+          "discordStatus": "active|not-running|unknown",
+          "ready": "boolean",
+          "hasLocalStats": "boolean",
+          "hasPromptStats": "boolean",
+          "todayPrompts": "number",
+          "todaySessions": "number",
+          "todayTotalTokens": "number",
+          "todayTokensByModel": "object",
+          "recentDays": "array",
+          "totalPrompts": "number",
+          "totalSessions": "number",
+          "activeDays": "number",
+          "activeDates": "array",
+          "modelUsage": "object",
+          "cacheRatio": "number",
+          "avgContext": "number",
+          "limits": "array",
+          "balance": "object|null",
+          "provider": "string",
+          "modelId": "string",
+          "modelApi": "string",
+          "usageStatusText": "string",
+          "authHelpText": "string",
+          "minimaxAvailable": "boolean",
+          "minimaxError": "string",
+          "minimaxTokenPlan": "object|null",
+          "minimaxSummary5h": "string",
+          "minimaxSummaryWeekly": "string",
+          "minimaxSummaryReset": "string",
+          "minimaxFetchedAt": "string"
+        },
+        "cacheFile": "~/.local/state/omarchy/agents/usage/openclaw.json",
+        "stateFile": "~/.local/state/omarchy/agents/usage/openclaw.state.json",
+        "refreshSeconds": 60
       },
-      "cacheFile": "~/.local/state/omarchy/agents/usage/openclaw.json",
-      "stateFile": "~/.local/state/omarchy/agents/usage/openclaw.state.json",
-      "refreshSeconds": 20
-    },
+      {
+        "path": "bin/omarchy-agent-usage-grok",
+        "installPath": "/usr/bin/omarchy-agent-usage-grok",
+        "agentId": "grok",
+        "agentName": "Grok",
+        "interface": "omarchy-agent-usage",
+        "activeByDefault": false,
+        "activation": "XAI_API_KEY env var (https://console.x.ai)",
+        "outputSchema": {
+          "id": "string",
+          "name": "string",
+          "schemaVersion": "number",
+          "provider": "string",
+          "ready": "boolean",
+          "installed": "boolean",
+          "version": "string",
+          "activeModel": "string",
+          "limits": "array",
+          "recentDays": "array",
+          "modelUsage": "object",
+          "todayPrompts": "number",
+          "todaySessions": "number",
+          "todayTotalTokens": "number",
+          "totalPrompts": "number",
+          "totalSessions": "number",
+          "activeDays": "number",
+          "activeDates": "array",
+          "avgContext": "number",
+          "cacheRatio": "number",
+          "balance": "object|null",
+          "authHelpText": "string"
+        },
+        "cacheFile": "~/.local/state/omarchy/agents/usage/grok.json",
+        "remoteEndpoint": "GET https://api.x.ai/v1/api-key",
+        "refreshSeconds": 60,
+        "networkCalls": "only when XAI_API_KEY is set"
+      },
+      {
+        "path": "bin/omarchy-agent-usage-gemini",
+        "installPath": "/usr/bin/omarchy-agent-usage-gemini",
+        "agentId": "gemini",
+        "agentName": "Gemini",
+        "interface": "omarchy-agent-usage",
+        "activeByDefault": false,
+        "activation": "GEMINI_API_KEY or GOOGLE_API_KEY env var (https://aistudio.google.com/apikey)",
+        "outputSchema": {
+          "id": "string",
+          "name": "string",
+          "schemaVersion": "number",
+          "provider": "string",
+          "ready": "boolean",
+          "installed": "boolean",
+          "version": "string",
+          "activeModel": "string",
+          "limits": "array",
+          "recentDays": "array",
+          "modelUsage": "object",
+          "todayPrompts": "number",
+          "todaySessions": "number",
+          "todayTotalTokens": "number",
+          "totalPrompts": "number",
+          "totalSessions": "number",
+          "activeDays": "number",
+          "activeDates": "array",
+          "avgContext": "number",
+          "cacheRatio": "number",
+          "balance": "object|null",
+          "authHelpText": "string"
+        },
+        "cacheFile": "~/.local/state/omarchy/agents/usage/gemini.json",
+        "remoteEndpoint": "GET https://generativelanguage.googleapis.com/v1beta/models",
+        "refreshSeconds": 60,
+        "networkCalls": "only when GEMINI_API_KEY or GOOGLE_API_KEY is set"
+      }
+    ],
     "panelPatch": {
       "path": "targets/Panel.qml",
       "installPath": "/usr/share/omarchy/shell/plugins/agents/Panel.qml",
-      "backupSuffix": ".openclaw-backup",
-      "marker": "// === OPENCLAW_INTEGRATION_V1 ==="
+      "backupSuffix": ".openclaw-backup"
     },
     "mainPatch": {
       "path": "targets/Main.qml",
       "installPath": "/usr/share/omarchy/shell/plugins/agents/Main.qml",
+      "backupSuffix": ".openclaw-backup"
+    },
+    "manifestPatch": {
+      "path": "targets/manifest.json",
+      "installPath": "/usr/share/omarchy/shell/plugins/agents/manifest.json",
       "backupSuffix": ".openclaw-backup",
-      "marker": "// === OPENCLAW_INTEGRATION_V1 ==="
+      "purpose": "Enables all 6 providers in defaults.providers and sets refreshIntervalSec to 60"
     },
     "assets": [
-      {
-        "path": "assets/openclaw.svg",
-        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/openclaw.svg"
-      },
-      {
-        "path": "assets/openclaw-light.svg",
-        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/openclaw-light.svg"
-      }
+      {"path": "assets/claude.svg",         "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/claude.svg",         "purpose": "Anthropic brand mark (greied)"},
+      {"path": "assets/codex.svg",          "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/codex.svg",          "purpose": "OpenAI brand mark (greied)"},
+      {"path": "assets/codex-light.svg",    "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/codex-light.svg",    "purpose": "Light-theme OpenAI variant (greied)"},
+      {"path": "assets/fireworks.svg",      "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/fireworks.svg",      "purpose": "Fireworks brand mark (greied)"},
+      {"path": "assets/grok.svg",           "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/grok.svg",           "purpose": "xAI Grok stylized X (greied)"},
+      {"path": "assets/gemini.svg",         "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/gemini.svg",         "purpose": "Google Gemini interlocking diamond (greied)"},
+      {"path": "assets/openclaw.svg",       "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/openclaw.svg",       "purpose": "Lobster emoji with grayscale filter"},
+      {"path": "assets/openclaw-light.svg", "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/openclaw-light.svg", "purpose": "Light-theme lobster variant"}
     ],
     "menuEntry": {
       "configPath": "~/.config/omarchy/extensions/omarchy-menu.jsonc",
@@ -95,14 +184,25 @@
     "filesystem": {
       "writes": [
         "/usr/bin/omarchy-agent-usage-openclaw",
-        "/usr/share/omarchy/shell/plugins/agents/assets/openclaw.svg",
-        "/usr/share/omarchy/shell/plugins/agents/assets/openclaw-light.svg",
+        "/usr/bin/omarchy-agent-usage-grok",
+        "/usr/bin/omarchy-agent-usage-gemini",
         "/usr/share/omarchy/shell/plugins/agents/Panel.qml",
         "/usr/share/omarchy/shell/plugins/agents/Main.qml",
+        "/usr/share/omarchy/shell/plugins/agents/manifest.json",
+        "/usr/share/omarchy/shell/plugins/agents/assets/claude.svg",
+        "/usr/share/omarchy/shell/plugins/agents/assets/codex.svg",
+        "/usr/share/omarchy/shell/plugins/agents/assets/codex-light.svg",
+        "/usr/share/omarchy/shell/plugins/agents/assets/fireworks.svg",
+        "/usr/share/omarchy/shell/plugins/agents/assets/grok.svg",
+        "/usr/share/omarchy/shell/plugins/agents/assets/gemini.svg",
+        "/usr/share/omarchy/shell/plugins/agents/assets/openclaw.svg",
+        "/usr/share/omarchy/shell/plugins/agents/assets/openclaw-light.svg",
         "~/.config/omarchy/extensions/omarchy-menu.jsonc",
         "~/.config/omarchy/defaults/agent",
         "~/.local/state/omarchy/agents/usage/openclaw.json",
-        "~/.local/state/omarchy/agents/usage/openclaw.state.json"
+        "~/.local/state/omarchy/agents/usage/openclaw.state.json",
+        "~/.local/state/omarchy/agents/usage/grok.json",
+        "~/.local/state/omarchy/agents/usage/gemini.json"
       ],
       "sudo": "yes (for /usr/bin/ and /usr/share/omarchy/ paths only)",
       "notes": "No writes outside the paths listed. uninstall.sh restores system files from .openclaw-backup created at install time."
@@ -119,12 +219,16 @@
       ],
       "remoteCode": "no",
       "polkit": "no",
-      "notes": "Only reads user-local state. No calls to external services from the collector itself."
+      "notes": "OpenClaw collector reads user-local state only. Grok and Gemini collectors make outbound HTTP GET requests to provider APIs ONLY when their respective API key env vars are set. No calls from install/uninstall scripts."
     },
     "apiKeys": {
-      "stored": "in ~/.openclaw/.env (chmod 600), managed by `openclaw onboard`",
+      "stored": [
+        {"provider": "openclaw", "location": "~/.openclaw/.env (chmod 600), managed by `openclaw onboard`"},
+        {"provider": "grok",     "location": "XAI_API_KEY env var (read by collector only, never persisted)"},
+        {"provider": "gemini",   "location": "GEMINI_API_KEY or GOOGLE_API_KEY env var (read by collector only, never persisted)"}
+      ],
       "inPackage": "none",
-      "notes": "This package never ships or stores API keys. All key setup is delegated to OpenClaw's own CLI."
+      "notes": "This package never ships or stores API keys. OpenClaw uses its own onboarding flow; Grok and Gemini keys come from the user's environment."
     }
   },
   "securityBoundaries": {
@@ -143,11 +247,11 @@
       "background jobs that survive panel close"
     ],
     "explicitNonGoals": [
-      "Token usage display for arbitrary providers (only OpenClaw-native fields; users add their own)",
-      "Hermes/Codex/Claude/etc. integration (out of scope; one agent per package)",
-      "Background services or daemons (the sweeper invokes us; we don't poll)",
+      "Outbound calls from install/uninstall scripts (only collectors make network calls)",
+      "Background services or daemons (the sweeper invokes us; we don't poll on our own)",
       "Privileged operations (no sudo tricks, no capability escalation)",
-      "API key storage or transmission (delegated to `openclaw onboard`)"
+      "Storing or transmitting API keys (delegated to OpenClaw or user env)",
+      "Replacing Omarchy's stock Panel.qml / Main.qml wholesale (we add OpenClaw block + dock, keep all upstream sections intact)"
     ]
   },
   "install": {
@@ -158,24 +262,32 @@
       "sudo access for /usr/bin/ and /usr/share/omarchy/"
     ],
     "postInstall": [
-      "OpenClaw collector at /usr/bin/omarchy-agent-usage-openclaw",
-      "Lobster SVG assets in Omarchy's agents panel assets dir",
-      "Panel.qml + Main.qml patched (originals backed up as *.openclaw-backup)",
+      "Three collectors at /usr/bin/omarchy-agent-usage-{openclaw,grok,gemini}",
+      "Eight SVG assets in Omarchy's agents panel assets dir",
+      "Panel.qml + Main.qml + manifest.json patched (originals backed up as *.openclaw-backup)",
       "OpenClaw entry in omarchy-menu.jsonc under super → agents",
       "Optional: default agent set to openclaw",
       "Quickshell reloaded"
+    ],
+    "panelChanges": [
+      "Dock shows one circle per connected provider (claude, codex, fireworks from Omarchy base; openclaw from this package; grok and gemini appear when keys are set)",
+      "Each dock circle has a brand-colored progress ring around a greied center icon",
+      "Double-click anywhere on the dock toggles ring colors on/off",
+      "Click a circle to open the panel focused on that provider",
+      "Manifest defaults enable all 6 providers; refresh interval is 60s"
     ]
   },
   "uninstall": {
     "command": "./uninstall.sh",
-    "reversible": "yes — restores Panel.qml + Main.qml from .openclaw-backup",
-    "sideEffects": "Removes collector, SVGs, menu entry. Does NOT uninstall OpenClaw itself."
+    "reversible": "yes — restores Panel.qml + Main.qml + manifest.json from .openclaw-backup",
+    "sideEffects": "Removes collectors, this package's SVGs, menu entry. Does NOT uninstall OpenClaw itself. Does NOT remove XAI_API_KEY or GEMINI_API_KEY env vars (unset those yourself if you want)."
   },
   "docs": {
     "readme": "README.md",
     "architecture": "docs/architecture.md",
     "security": "docs/security.md",
     "telemetry": "docs/telemetry.md",
+    "panel": "docs/panel.md",
     "troubleshooting": "docs/troubleshooting.md",
     "aiAgentSkill": "skill/SKILL.md"
   }

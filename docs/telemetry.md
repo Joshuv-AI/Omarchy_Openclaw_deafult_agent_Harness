@@ -1,97 +1,103 @@
 # Telemetry
 
-This document describes the data the integration reads, writes, and displays. The aim is to make the data flow transparent — a user should know exactly what their machine is reporting to the panel.
+This document describes the data each collector reads, writes, and
+displays. The aim is transparency — a user should know exactly what their
+machine is reporting to the panel.
 
-## Data sources
+## Data sources per collector
 
-The collector (`bin/omarchy-agent-usage-openclaw`) reads:
+### `omarchy-agent-usage-openclaw` (always installed)
 
 | Source | What it reads | Where it lives |
 |---|---|---|
-| `~/.openclaw/.env` | API key variable names (presence only — never the values) | User's home |
+| `~/.openclaw/.env` | API key variable NAMES (presence only — never the values) | User's home |
 | `~/.openclaw/crestodian/sessions/*.trajectory.jsonl` | Per-step OpenClaw trajectory entries (model usage, prompts, sessions) | User's home |
 | `~/.openclaw/tui/last-session.json` | Most recently updated session ID | User's home |
 | `systemctl --user is-active openclaw-gateway.service` | Active/inactive state | User systemd |
 | `systemctl --user show openclaw-gateway.service --property=ActiveEnterTimestamp` | Gateway start time | User systemd |
-| `openclaw --version` | Version string (first line only) | $PATH |
-| `node --version` | Node version | $PATH |
-| `pgrep -f openclaw` | OpenClaw PID | /proc |
-| `pgrep -f discord` | Discord presence | /proc |
+| `openclaw --version` | Version string (first line only) | `$PATH` |
+| `node --version` | Node version | `$PATH` |
+| `pgrep -f openclaw` | OpenClaw PID | `/proc` |
+| `pgrep -f discord` | Discord presence | `/proc` |
 
 The collector never reads:
-- API key VALUES (only presence — checks if `MINIMAX_API_KEY=` exists, not its value).
-- Files outside the paths above.
-- `/etc/` for anything except via `systemctl --user` (which is a user-scope systemd query).
-- Remote endpoints.
+- API key VALUES (only presence — checks if `MINIMAX_API_KEY=` exists, not its value)
+- Files outside the paths above
+- Remote endpoints (OpenClaw's MiniMax data is fetched by OpenClaw itself
+  via `~/.openclaw/.env` — this collector just reads the local cache)
+
+### `omarchy-agent-usage-grok` (installed but no-op without key)
+
+| Source | What it reads | Where it lives |
+|---|---|---|
+| `XAI_API_KEY` env var | API key value | Process environment |
+| `GET https://api.x.ai/v1/api-key` | Per-model rate limits (rpm/rpd/tpm/tpd) | xAI network |
+
+When `XAI_API_KEY` is unset, the collector writes a minimal record with
+`authHelpText` pointing to https://console.x.ai so the panel can
+display a setup hint.
+
+### `omarchy-agent-usage-gemini` (installed but no-op without key)
+
+| Source | What it reads | Where it lives |
+|---|---|---|
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` env var | API key value | Process environment |
+| `GET https://generativelanguage.googleapis.com/v1beta/models?key=***` | Available model list + rate-limit response headers | Google network |
+
+When neither key is set, the collector writes a minimal record with
+`authHelpText` pointing to https://aistudio.google.com/apikey.
 
 ## Data outputs
 
-The collector emits JSON to stdout. The Omarchy sweeper writes this to:
+Every collector emits JSON to stdout. Omarchy's sweeper writes this to
+`~/.local/state/omarchy/agents/usage/<id>.json`:
 
+```json
+{
+  "id": "openclaw",            // matches filename basename, drives providerId
+  "name": "OpenClaw",          // display name in popup
+  "ready": true,               // false → filtered out by providerHasData()
+  "installed": true,           // false → also filtered
+  "schemaVersion": 1,
+  "version": "...",            // optional, shown in popup
+  "activeModel": "...",        // shown in popup
+  "recentDays": [...],         // drives today/weekly meters
+  "limits": [...],             // drives the Limits section
+  "modelUsage": {},            // drives Tokens-by-model section
+  "balance": null,             // prepaid balance display (optional)
+  "provider": "xai"            // source attribution tag
+}
 ```
-~/.local/state/omarchy/agents/usage/openclaw.json
-```
 
-with `chmod 600` (user-only readable).
+OpenClaw's record additionally has gateway state, runtime, Discord
+status, total sessions, and `minimaxTokenPlan` fields (see
+`manifest.json`'s `outputSchema` for the full schema).
 
-### Schema
+## Network calls
 
-| Field | Type | Source |
+Only two collectors make outbound network calls, and only when their
+respective API key is set:
+
+| Collector | Endpoint | When |
 |---|---|---|
-| `id` | string | Static — always `"openclaw"` |
-| `name` | string | Static — always `"OpenClaw"` |
-| `version` | string | `openclaw --version` first line |
-| `gatewayState` | enum | `systemctl --user is-active` |
-| `activeModel` | string | Latest trajectory entry's `provider/modelId` |
-| `currentSessionId` | string | `~/.openclaw/tui/last-session.json` |
-| `currentSessionTitle` | string | Same |
-| `gatewayStartedAt` | string | `systemctl --user show ... --property=ActiveEnterTimestamp` |
-| `nodeVersion` | string | `node --version` |
-| `openclawPid` | string | `pgrep -f openclaw` |
-| `openclawUptime` | string | Computed from `gatewayStartedAt` and current time |
-| `discordStatus` | enum | `pgrep -f discord` |
-| `todayPrompts` | number | Trajectory aggregation for today |
-| `todaySessions` | number | Trajectory aggregation for today |
-| `todayTotalTokens` | number | Trajectory aggregation for today |
-| `recentDays` | array | Last 7 days of (date, tokens, messageCount) |
-| `totalPrompts` | number | Trajectory aggregation all-time |
-| `totalSessions` | number | Trajectory aggregation all-time |
-| `activeDays` | number | Days with non-zero token activity |
-| `modelUsage` | object | Per-model token breakdown |
-| `cacheRatio` | number | Cache hit ratio across trajectory |
-| `usageStatusText` | string | Human-readable status for PanelHero |
-| `authHelpText` | string | Empty (we deleted the orphan-claude/codex/fireworks path) |
+| grok | `https://api.x.ai/v1/api-key` | `XAI_API_KEY` is set |
+| gemini | `https://generativelanguage.googleapis.com/v1beta/models` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` is set |
 
-### State file (stale-data-fallback)
+No other network calls are made by this package. No telemetry is sent
+anywhere. The collectors do not phone home.
 
-```
-~/.local/state/omarchy/agents/usage/openclaw.state.json
-```
+## What the panel displays
 
-On successful collector run: write the same JSON as `openclaw.json`.
-On collector failure (any live check fails): read this file and return its contents.
+The panel reads the JSON files and renders them in three places:
 
-This ensures the panel never shows "0 / 0 / inactive" when the issue is transient (e.g., openclaw briefly not on PATH during an update).
+1. **Dock row** — one circle per enabled provider with `providerHasData() = true`
+2. **Popup hero** — `providerName`, `version`, `activeModel`
+3. **Popup status block** — provider-specific data (OpenClaw gateway/runtime/Discord/MiniMax block; other providers get the standard recentDays/limits/models block)
 
-## Panel display
+Detailed panel behavior is in `panel.md`.
 
-The panel reads `openclaw.json` (via Quickshell's panel plugin) and displays:
-- Gateway state (green/yellow/red dot)
-- OpenClaw version
-- Active model
-- Runtime (Node version + PID + uptime)
-- Discord status
-- Total sessions (cumulative)
+## See also
 
-These are the only fields the panel shows. **No provider-specific token usage** (that section was removed for v1.0 — see `docs/security.md` "Explicit non-goals").
-
-## Privacy
-
-- All data stays on the user's machine.
-- No telemetry leaves the device.
-- No third-party services are contacted.
-- The collector's stdout is JSON, captured by Omarchy's sweeper, written to a user-owned file.
-
-## Versioning
-
-The collector's output schema follows SemVer. Breaking changes to field names or types will trigger a major version bump. New fields may be added in minor versions.
+- `architecture.md` — components and provider model
+- `panel.md` — what the user sees
+- `security.md` — threat model around these data flows

@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""Collect Google Gemini rate-limit data for the Omarchy agents panel.
+
+Queries Google's GET /v1beta/models endpoint which returns the list of
+available models. Rate limits are surfaced via response headers
+(x-ratelimit-*-requests / x-ratelimit-*-tokens) when applicable. Per-model
+quotas for a specific tier would require a real generateContent call to
+see accurate headers, so we list available models as the "limits" with
+unknown usage percent (-1) and rely on the panel to render them as named
+entries with no bar fill.
+
+Output JSON matches the schema documented in the omarchy-integration
+manifest.json (outputSchema block).
+"""
+# omarchy:summary=Print Google Gemini usage as JSON
+# omarchy:args=[--force]
+# omarchy:hidden=true
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+AGENT_ID = "gemini"
+AGENT_NAME = "Gemini"
+USAGE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "omarchy" / "agents" / "usage"
+USAGE_FILE = USAGE_DIR / f"{AGENT_ID}.json"
+API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+SUBPROCESS_TIMEOUT_SECONDS = 8
+MAX_LIMIT_ENTRIES = 8  # cap to keep the panel uncluttered
+
+
+def get_api_key():
+    """Read GEMINI_API_KEY or GOOGLE_API_KEY. Returns None if neither set."""
+    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        key = os.environ.get(var, "").strip()
+        if key:
+            return key
+    return None
+
+
+def http_get_with_headers(url, timeout=SUBPROCESS_TIMEOUT_SECONDS):
+    """HTTP GET returning (status, parsed_body_or_None, headers_dict_lowercased)."""
+    req = urllib.request.Request(url)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            headers = {k.lower(): v for k, v in resp.headers.items()}
+            return resp.status, (json.loads(body) if body else None), headers
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+            headers = {k.lower(): v for k, v in e.headers.items()}
+            return e.code, (json.loads(body) if body else None), headers
+        except Exception:
+            return e.code, None, {}
+    except Exception:
+        return None, None, {}
+
+
+def fetch_models(api_key):
+    """GET /v1beta/models?key=... — returns (status, body, headers)."""
+    return http_get_with_headers(f"{API_BASE}/models?key={api_key}")
+
+
+def _empty_record():
+    return {
+        "id": AGENT_ID,
+        "name": AGENT_NAME,
+        "schemaVersion": 1,
+        "provider": "google",
+        "ready": False,
+        "installed": True,
+        "version": "",
+        "activeModel": "",
+        "limits": [],
+        "recentDays": [],
+        "modelUsage": {},
+        "todayPrompts": 0,
+        "todaySessions": 0,
+        "todayTotalTokens": 0,
+        "totalPrompts": 0,
+        "totalSessions": 0,
+        "activeDays": 0,
+        "activeDates": [],
+        "avgContext": 0,
+        "cacheRatio": 0,
+        "balance": None,
+    }
+
+
+def main():
+    USAGE_DIR.mkdir(parents=True, exist_ok=True)
+    record = _empty_record()
+
+    api_key = get_api_key()
+    if not api_key:
+        record["authHelpText"] = (
+            "Set GEMINI_API_KEY (or GOOGLE_API_KEY) in your environment to "
+            "enable Gemini rate-limit data. Get a key at "
+            "https://aistudio.google.com/apikey"
+        )
+        USAGE_FILE.write_text(json.dumps(record, indent=2))
+        return
+
+    try:
+        status, body, headers = fetch_models(api_key)
+    except Exception as e:
+        record["authHelpText"] = f"Gemini API error: {e}"
+        USAGE_FILE.write_text(json.dumps(record, indent=2))
+        return
+
+    if status != 200 or not isinstance(body, dict):
+        msg = ""
+        if isinstance(body, dict) and isinstance(body.get("error"), dict):
+            msg = body["error"].get("message", "")
+        record["authHelpText"] = f"Gemini API returned HTTP {status}: {msg}"
+        USAGE_FILE.write_text(json.dumps(record, indent=2))
+        return
+
+    # /v1beta/models returns {"models": [{"name": "models/gemini-2.0-flash", ...}, ...]}
+    models = body.get("models") or []
+    limits = []
+    active_model = ""
+    for m in models:
+        # names look like "models/gemini-2.0-flash" — strip the prefix for display
+        full_name = (m.get("name") or "").strip()
+        short_name = full_name[len("models/"):] if full_name.startswith("models/") else full_name
+        if not active_model and short_name:
+            active_model = short_name
+        limits.append({
+            "title": short_name,
+            "percent": -1,  # /v1beta/models doesn't return per-model usage
+            "model": short_name,
+        })
+        if len(limits) >= MAX_LIMIT_ENTRIES:
+            break
+
+    # If response headers happened to carry aggregate rate-limit info, surface it
+    # (e.g. x-ratelimit-remaining-requests / x-ratelimit-limit-requests).
+    # We don't apply this per-model — it's just a marker that we got something.
+    rl_req_remaining = headers.get("x-ratelimit-remaining-requests", "")
+    rl_req_limit = headers.get("x-ratelimit-limit-requests", "")
+    rl_summary = ""
+    if rl_req_limit:
+        rl_summary = f"reqs: {rl_req_remaining or '?'}/{rl_req_limit}"
+
+    record.update({
+        "ready": True,
+        "version": "Google AI API",
+        "activeModel": active_model,
+        "limits": limits,
+        "authHelpText": rl_summary,  # only set if header info present
+    })
+    USAGE_FILE.write_text(json.dumps(record, indent=2))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"omarchy-agent-usage-gemini: {e!r}", file=sys.stderr)
+        sys.exit(0)
