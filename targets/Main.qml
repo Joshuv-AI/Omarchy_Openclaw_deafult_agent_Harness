@@ -186,6 +186,21 @@ Item {
   // recent scans in this mode.
   function refreshLimits() { runUpdate("limits") }
 
+  // IDs that are sub-providers (model backends plugged into OpenClaw or
+  // Hermes), not standalone selectable agents. They appear in the dock
+  // only when OpenClaw/Hermes is the active popup agent AND that agent's
+  // activeModel matches the sub-provider's prefix. They never appear in
+  // the default agent selector (omarchy-menu.jsonc has no entries for
+  // these IDs).
+  readonly property var subProviderIds: ["kimi"]
+  // activeModel prefix aliases per sub-provider. Kimi is the Moonshot AI
+  // platform — the API key may surface as either "kimi/" or "moonshot/"
+  // depending on whether the agent uses the manual provider or the
+  // official Moonshot provider.
+  readonly property var subProviderPrefixes: ({
+    "kimi": ["kimi/", "moonshot/"]
+  })
+
   // ------------------------------------------------------------- providers
 
   // An agent earns a place in the bar and the panel by being switched on in
@@ -203,6 +218,10 @@ Item {
       var id = String(record.id)
       localIds[id] = true
       if (!providerEnabled(id)) continue
+      // Sub-providers (model backends) live in subProviders, not here —
+      // they never appear in the default agent selector and only surface
+      // in the dock when OpenClaw/Hermes is actively using them.
+      if (subProviderIds.indexOf(id) >= 0) continue
       var display = displayProvider(record)
       if (providerHasData(display)) result.push(display)
     }
@@ -222,6 +241,43 @@ Item {
   function providerEnabled(id) {
     if (!settings || !settings.providers || !settings.providers[id]) return true
     return settings.providers[id].enabled !== false
+  }
+
+  // Sub-providers are model backends (e.g., Kimi) plugged into OpenClaw or
+  // Hermes. They appear in the dock ONLY when (a) the collector wrote
+  // usable data AND (b) OpenClaw or Hermes is the active popup agent AND
+  // (c) that agent's activeModel starts with one of the sub-provider's
+  // configured prefixes. They never appear in the agent selector.
+  property var subProviders: {
+    var rev = dataRevision
+    var result = []
+    var activeModel = ""
+    for (var i = 0; i < agents.length; i++) {
+      var rec = agents[i] ? agents[i].record : null
+      if (!rec || !rec.id) continue
+      var rid = String(rec.id)
+      if (rid === "openclaw" || rid === "hermes") {
+        activeModel = String(rec.activeModel || "")
+        if (activeModel !== "") break
+      }
+    }
+    if (activeModel === "") return result
+
+    for (var j = 0; j < agents.length; j++) {
+      var record = agents[j] ? agents[j].record : null
+      if (!record || !record.id) continue
+      var id = String(record.id)
+      if (subProviderIds.indexOf(id) < 0) continue
+      var prefixes = subProviderPrefixes[id] || []
+      var matches = false
+      for (var pIdx = 0; pIdx < prefixes.length; pIdx++) {
+        if (activeModel.indexOf(prefixes[pIdx]) === 0) { matches = true; break }
+      }
+      if (!matches) continue
+      var display = displayProvider(record)
+      if (providerHasData(display)) result.push(display)
+    }
+    return result
   }
 
   // All-time keeps a quiet day from hiding an agent; today's counts admit a
@@ -287,6 +343,15 @@ Item {
       // counters, only usage rates from the token-plan endpoint).
       minimaxAvailable: record.minimaxAvailable === true,
       minimaxTokenPlan: record.minimaxTokenPlan && typeof record.minimaxTokenPlan === "object" ? record.minimaxTokenPlan : null,
+
+      // Kimi sub-provider data. Pass through so providerHasData() and the
+      // ring-fill logic can recognize a Kimi record as having data, and
+      // so the panel knows which ring semantic to apply (token-usage vs
+      // connection).
+      kimiAvailable: record.kimiAvailable === true,
+      kimiUsageMode: String(record.kimiUsageMode || "none"),
+      kimiRingEmpty: record.kimiRingEmpty === true,
+      kimiAccountInfo: record.kimiAccountInfo && typeof record.kimiAccountInfo === "object" ? record.kimiAccountInfo : null,
 
       todayPrompts: synced ? numberValue(stats.todayPrompts) : numberValue(record.todayPrompts),
       todaySessions: synced ? numberValue(stats.todaySessions) : numberValue(record.todaySessions),
