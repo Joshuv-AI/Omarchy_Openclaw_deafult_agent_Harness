@@ -209,7 +209,7 @@ Item {
     // Qwen Portal OAuth tokens use "qwen-oauth/<model>". The Alibaba plugin
     // for Wan video models registers as "alibaba/<model>" — distinct auth
     // surface but same DashScope key chain.
-    "qwen": ["qwen/", "dashscope/"]
+    "qwen": ["qwen/", "dashscope/", "qwen-oauth/", "alibaba/"]
   })
 
   // ------------------------------------------------------------- providers
