@@ -492,6 +492,16 @@ Panel {
           maxPct = Math.max(maxPct, l.percent);
         }
       }
+      // When quota usage is negligible (< 10%) but the provider has real
+      // recent activity (todayTotalTokens > 0 or todayPrompts > 0), the
+      // quota data understates reality — common for codex where the 720h
+      // window limit barely registers against session-driven usage. Prefer
+      // a logarithmic scale of today's tokens so the ring is visible.
+      if (maxPct < 0.1 && (Number(p.todayTotalTokens || 0) > 0 || Number(p.todayPrompts || 0) > 0)) {
+        var totalToday2 = Number(p.todayTotalTokens || 0)
+        var visible2 = totalToday2 > 0 ? Math.min(0.7, 0.05 + Math.log10(totalToday2 / 1000 + 1) * 0.15) : 0.1
+        return Math.max(0.1, visible2)
+      }
       return Math.max(0, Math.min(1, maxPct));
     }
 
@@ -948,6 +958,45 @@ Panel {
             readonly property bool isOpenClaw: root.provider ? (root.provider.providerId === "openclaw") : false
     readonly property bool isHermes: root.provider ? (root.provider.providerId === "hermes") : false
     readonly property bool isMiniMax: root.provider ? (root.provider.providerId === "minimax") : false
+
+            // ---- Generic weekly chart + headline meter (for non-OpenClaw/Hermes/MiniMax providers like codex) ----
+            Item {
+              visible: !usageSection.isOpenClaw && !usageSection.isHermes && !usageSection.isMiniMax
+              width: parent.width
+              Layout.fillWidth: true
+
+              // Top bar: current usage as a single fill meter
+              Item {
+                width: parent.width
+                height: 10
+                Rectangle {
+                  anchors.fill: parent
+                  radius: 5
+                  color: Qt.darker(root.foreground, 3.5)
+                  opacity: 0.35
+                }
+                Rectangle {
+                  anchors.left: parent.left
+                  anchors.top: parent.top
+                  anchors.bottom: parent.bottom
+                  radius: 5
+                  color: root.foreground
+                  width: parent.width * root.clamp(Number(root.provider && root.provider.limits && root.provider.limits[0] ? root.provider.limits[0].percent : 0), 0, 1)
+                  Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                }
+              }
+
+              // Day rows: weekly bars showing usage by day
+              Repeater {
+                model: usageSection.days
+                DayRow {
+                  day: modelData
+                  ratio: usageSection.peak > 0 ? (Number(modelData.messageCount || 0) / usageSection.peak) : 0
+                  today: String(modelData.date || "") === root.todayDate()
+                  width: parent.width
+                }
+              }
+            }
 
             // ---- OpenClaw custom lines (single-line ternaries, no JS blocks) ----
             Text {
