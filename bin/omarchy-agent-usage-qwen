@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""
+omarchy-agent-usage-qwen — collector for the Qwen (DashScope) sub-provider.
+
+Display-only. Does NOT configure, troubleshoot, or suggest fixes for Qwen
+access. Per panel policy (2026-08-31): if Qwen can't be reached or the
+account has no usable quota, the ring is empty and we stop. The user is
+responsible for their own DashScope / Bailian configuration.
+
+Auto-detects DASHSCOPE_API_KEY and QWEN_BASE_URL from up to five locations,
+in order:
+  1. process environment (inherited from launching shell)
+  2. ~/.openclaw/.env  (OpenClaw standard)
+  3. ~/.bashrc, ~/.bash_profile, ~/.zshrc, ~/.profile  (shell rc files)
+  4. running OpenClaw or Hermes process environment  (Linux /proc/<pid>/environ)
+  5. systemd EnvironmentFile for openclaw-gateway.service / hermes-*.service
+
+The first source that returns a non-empty value wins. The source is
+recorded as `qwenKeySource` and `qwenBaseUrlSource` so the panel can
+display "Detected from <source>" or omit it silently.
+
+Default base URL is the DashScope INTERNATIONAL endpoint
+(https://dashscope-intl.aliyuncs.com/compatible-mode/v1). International
+accounts work out of the box; China-mainland users set
+QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1 in any
+of the five locations and it just works.
+
+DashScope has no public remaining-token endpoint (only dynamic monthly
+tier-based TPM documented at console level), so the probe is a single
+authenticated GET /models call. 200 -> connection-OK -> full ring. 401
+or other auth failure -> ring empty. No numeric quota extraction exists.
+
+Output schema (atomic write to ~/.local/state/omarchy/agents/usage/qwen.json):
+  {
+    "id": "qwen",
+    "name": "Qwen (DashScope)",
+    "schemaVersion": 2,
+    "provider": "dashscope",
+    "ready": true,
+    "installed": true,
+    "version": "<this-script-version>",
+    "fetchedAt": "<iso8601>",
+    "qwenAvailable": true|false,
+    "qwenUsageMode": "connection" | "none",
+    "qwenRingEmpty": true|false,
+    "qwenBaseUrl": "<resolved-base-url>",
+    "qwenBaseUrlSource": "process-env" | "openclaw-env" | "shell-rc"
+                        | "proc-environ" | "systemd-envfile" | "default",
+    "qwenKeySource": <same enum> | "missing",
+    "qwenModelCount": <int, when available>,
+    "qwenError": null | "<error summary, no secrets>"
+  }
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+# --- Constants ---------------------------------------------------------------
+
+SCRIPT_VERSION = "1.0.0"
+SCHEMA_VERSION = 2
+
+DEFAULT_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+CACHE_FILE = Path(os.environ.get("OMARCHY_QWEN_CACHE",
+                                 Path.home() / ".local/state/omarchy/agents/usage/qwen.json"))
+TIMEOUT_SECONDS = 5
+USER_AGENT = f"omarchy-agent-usage-qwen/{SCRIPT_VERSION}"
+
+# Token-usage API on DashScope does not exist publicly (only dynamic monthly
+# tier quotas documented at the console). We only do an authenticated
+# connection probe.
+PROBE_PATH = "/models"
+
+# --- Auto-detect helpers -----------------------------------------------------
+
+SHELL_RC_FILES = [
+    Path.home() / ".bashrc",
+    Path.home() / ".bash_profile",
+    Path.home() / ".zshrc",
+    Path.home() / ".profile",
+]
+
+ENV_VAR_NAME_KEY = "DASHSCOPE_API_KEY"
+ENV_VAR_NAME_BASE = "QWEN_BASE_URL"
+
+KEY_PATTERN = re.compile(
+    rf'^\s*(?:export\s+)?{re.escape(ENV_VAR_NAME_KEY)}\s*=\s*["\']?([^"\'\s#]+)',
+    re.MULTILINE,
+)
+BASE_PATTERN = re.compile(
+    rf'^\s*(?:export\s+)?{re.escape(ENV_VAR_NAME_BASE)}\s*=\s*["\']?([^"\'\s#]+)',
+    re.MULTILINE,
+)
+
+
+def _read_shell_rc(var_pattern: re.Pattern) -> tuple[str | None, str | None]:
+    """Grep shell rc files for `export NAME=value`. Returns (value, source-file)."""
+    for rc in SHELL_RC_FILES:
+        try:
+            text = rc.read_text(errors="ignore")
+        except (FileNotFoundError, PermissionError, IsADirectoryError):
+            continue
+        m = var_pattern.search(text)
+        if m and m.group(1):
+            return m.group(1).strip().strip('"').strip("'"), rc.name
+    return None, None
+
+
+def _read_proc_environ(pid: int) -> dict[str, str] | None:
+    """Read a process's environment from /proc/<pid>/environ. Linux only."""
+    try:
+        data = Path(f"/proc/{pid}/environ").read_bytes()
+    except (FileNotFoundError, PermissionError, ProcessLookupError, OSError):
+        return None
+    out: dict[str, str] = {}
+    for chunk in data.split(b"\0"):
+        if not chunk:
+            continue
+        try:
+            k, _, v = chunk.decode("utf-8", errors="ignore").partition("=")
+        except ValueError:
+            continue
+        if k:
+            out[k] = v
+    return out
+
+
+def _find_proc_environ() -> dict[str, str] | None:
+    """Find a running OpenClaw or Hermes process and return its environment."""
+    candidates = []
+    try:
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                cmdline = (entry / "cmdline").read_bytes().decode("utf-8", errors="ignore")
+            except (FileNotFoundError, PermissionError, OSError):
+                continue
+            if any(name in cmdline for name in (
+                "openclaw",
+                "hermes",
+                "openclaw-gateway",
+            )):
+                candidates.append(int(entry.name))
+    except (FileNotFoundError, PermissionError, OSError):
+        return None
+    for pid in candidates:
+        env = _read_proc_environ(pid)
+        if env and (ENV_VAR_NAME_KEY in env or ENV_VAR_NAME_BASE in env):
+            return env
+    return None
+
+
+def _read_openclaw_env() -> dict[str, str] | None:
+    """Parse ~/.openclaw/.env into a dict. Comments and blanks ignored."""
+    env_path = Path.home() / ".openclaw" / ".env"
+    if not env_path.exists():
+        return None
+    out: dict[str, str] = {}
+    try:
+        text = env_path.read_text(errors="ignore")
+    except (PermissionError, OSError):
+        return None
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        k = k.strip()
+        v = v.strip().strip('"').strip("'")
+        if k:
+            out[k] = v
+    return out
+
+
+def _read_systemd_envfile() -> dict[str, str] | None:
+    """Best-effort read of the OpenClaw/Hermes systemd service EnvironmentFile."""
+    service_names = ("openclaw-gateway.service", "hermes-gateway.service")
+    for svc in service_names:
+        try:
+            out = subprocess_run(
+                ["systemctl", "--user", "show", svc, "--property=EnvironmentFiles"],
+                timeout=2,
+            )
+        except Exception:
+            continue
+        if not out:
+            continue
+        # Output: EnvironmentFiles=/path/to/env
+        for line in out.splitlines():
+            if "=" not in line:
+                continue
+            _, _, paths = line.partition("=")
+            for p in paths.split():
+                path = Path(p)
+                if not path.exists():
+                    continue
+                try:
+                    text = path.read_text(errors="ignore")
+                except (PermissionError, OSError):
+                    continue
+                parsed = {}
+                for ln in text.splitlines():
+                    ln = ln.strip()
+                    if not ln or ln.startswith("#") or "=" not in ln:
+                        continue
+                    k, _, v = ln.partition("=")
+                    parsed[k.strip()] = v.strip().strip('"').strip("'")
+                if parsed:
+                    return parsed
+    return None
+
+
+def subprocess_run(cmd, timeout):
+    """Tiny subprocess wrapper to avoid importing subprocess at module top."""
+    import subprocess
+    try:
+        cp = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return cp.stdout if cp.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def resolve_key_and_base() -> tuple[str | None, str | None, str, str]:
+    """Walk the five detection sources in priority order.
+
+    Returns (api_key, base_url, key_source, base_url_source).
+    Either may be None if not found anywhere.
+    """
+    api_key = None
+    base_url = None
+    key_src = "missing"
+    base_src = "default"
+
+    # 1. process environment
+    api_key = os.environ.get(ENV_VAR_NAME_KEY) or None
+    if api_key:
+        key_src = "process-env"
+    base_url = os.environ.get(ENV_VAR_NAME_BASE) or None
+    if base_url:
+        base_src = "process-env"
+
+    # 2. ~/.openclaw/.env
+    if not api_key or not base_url:
+        oc_env = _read_openclaw_env() or {}
+        if not api_key and oc_env.get(ENV_VAR_NAME_KEY):
+            api_key = oc_env[ENV_VAR_NAME_KEY]
+            key_src = "openclaw-env"
+        if not base_url and oc_env.get(ENV_VAR_NAME_BASE):
+            base_url = oc_env[ENV_VAR_NAME_BASE]
+            base_src = "openclaw-env"
+
+    # 3. shell rc files
+    if not api_key or not base_url:
+        if not api_key:
+            v, _ = _read_shell_rc(KEY_PATTERN)
+            if v:
+                api_key = v
+                key_src = "shell-rc"
+        if not base_url:
+            v, _ = _read_shell_rc(BASE_PATTERN)
+            if v:
+                base_url = v
+                base_src = "shell-rc"
+
+    # 4. running OpenClaw/Hermes /proc/<pid>/environ
+    if not api_key or not base_url:
+        proc_env = _find_proc_environ()
+        if proc_env:
+            if not api_key and proc_env.get(ENV_VAR_NAME_KEY):
+                api_key = proc_env[ENV_VAR_NAME_KEY]
+                key_src = "proc-environ"
+            if not base_url and proc_env.get(ENV_VAR_NAME_BASE):
+                base_url = proc_env[ENV_VAR_NAME_BASE]
+                base_src = "proc-environ"
+
+    # 5. systemd EnvironmentFile
+    if not api_key or not base_url:
+        sysd_env = _read_systemd_envfile() or {}
+        if not api_key and sysd_env.get(ENV_VAR_NAME_KEY):
+            api_key = sysd_env[ENV_VAR_NAME_KEY]
+            key_src = "systemd-envfile"
+        if not base_url and sysd_env.get(ENV_VAR_NAME_BASE):
+            base_url = sysd_env[ENV_VAR_NAME_BASE]
+            base_src = "systemd-envfile"
+
+    if not base_url:
+        base_url = DEFAULT_BASE_URL
+
+    return api_key, base_url, key_src, base_src
+
+
+# --- Probe -------------------------------------------------------------------
+
+
+def probe(base_url: str, api_key: str) -> tuple[bool, str | None, int | None]:
+    """Single Bearer GET /models. Returns (ok, error_summary, model_count)."""
+    url = base_url.rstrip("/") + PROBE_PATH
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Authorization", f"Bearer {api_key}")
+    req.add_header("User-Agent", USER_AGENT)
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
+            body = resp.read(4096)
+            if resp.status == 200:
+                try:
+                    data = json.loads(body)
+                    count = len(data.get("data", [])) if isinstance(data, dict) else None
+                    return True, None, count
+                except (json.JSONDecodeError, ValueError):
+                    return True, None, None
+            return False, f"HTTP {resp.status}", None
+    except urllib.error.HTTPError as e:
+        # Redact any echoed key value from the response body for safety.
+        try:
+            body = e.read(2048).decode("utf-8", errors="ignore")
+        except Exception:
+            body = ""
+        body = re.sub(r'(sk-[A-Za-z0-9_\-]{6})[A-Za-z0-9_\-]+', r'\1[REDACTED]', body)
+        return False, f"HTTP {e.code} ({e.reason})", None
+    except urllib.error.URLError as e:
+        return False, f"network: {e.reason}", None
+    except (TimeoutError, OSError) as e:
+        return False, f"network: {e}", None
+
+
+# --- Output ------------------------------------------------------------------
+
+
+def _atomic_write_json(path: Path, payload: dict) -> None:
+    """Write JSON atomically: write to .tmp, then os.replace()."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, sort_keys=True)
+            f.write("\n")
+        os.replace(tmp, path)
+    except OSError:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+        raise
+
+
+def build_record(
+    api_key: str | None,
+    base_url: str,
+    key_src: str,
+    base_src: str,
+    ok: bool,
+    err: str | None,
+    model_count: int | None,
+) -> dict:
+    ring_empty = not ok
+    return {
+        "id": "qwen",
+        "name": "Qwen (DashScope)",
+        "schemaVersion": SCHEMA_VERSION,
+        "provider": "dashscope",
+        "ready": ok,
+        "installed": True,
+        "version": SCRIPT_VERSION,
+        "fetchedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "qwenAvailable": ok,
+        "qwenUsageMode": "connection" if ok else "none",
+        "qwenRingEmpty": ring_empty,
+        "qwenBaseUrl": base_url,
+        "qwenBaseUrlSource": base_src,
+        "qwenKeySource": key_src,
+        "qwenModelCount": model_count,
+        # Display-only policy: no authHelpText prompt, no troubleshooting URLs.
+        # Empty string keeps the field present (no schema break) but invisible.
+        "qwenError": err,
+        "authHelpText": "",
+    }
+
+
+def main() -> int:
+    api_key, base_url, key_src, base_src = resolve_key_and_base()
+
+    if not api_key:
+        record = build_record(
+            api_key=None,
+            base_url=base_url,
+            key_src=key_src,
+            base_src=base_src,
+            ok=False,
+            err=None,
+            model_count=None,
+        )
+        _atomic_write_json(CACHE_FILE, record)
+        print(json.dumps({"written": str(CACHE_FILE), "available": False,
+                          "reason": "DASHSCOPE_API_KEY not found"}))
+        return 0
+
+    ok, err, model_count = probe(base_url, api_key)
+    record = build_record(api_key, base_url, key_src, base_src, ok, err, model_count)
+    _atomic_write_json(CACHE_FILE, record)
+    print(json.dumps({"written": str(CACHE_FILE), "available": ok,
+                      "usageMode": record["qwenUsageMode"],
+                      "keySource": key_src, "baseUrlSource": base_src}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
