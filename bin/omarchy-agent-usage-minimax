@@ -39,33 +39,89 @@ USAGE_DIR = Path(
 USAGE_FILE = USAGE_DIR / f"{AGENT_ID}.json"
 ENV_FILE = Path.home() / ".openclaw" / ".env"
 API_BASE = "https://www.minimax.io/v1"
+API_BASE_CN = "https://api.minimaxi.com/v1"
 API_TIMEOUT_SECONDS = 8
+
+# Env var names that the MiniMax collector will accept, in priority
+# order. The first one found wins. Covers:
+#   MINIMAX_API_KEY        — International Coding Plan / Standard API key
+#   MINIMAX_PORTAL_TOKEN   — Qwen Portal / OAuth-portal-derived token
+#   MINIMAX_PORTAL_API_KEY — alternate name some setups use
+API_KEY_VARS = ("MINIMAX_API_KEY", "MINIMAX_PORTAL_TOKEN", "MINIMAX_PORTAL_API_KEY")
 
 
 def read_api_key():
-    """Read MINIMAX_API_KEY from ~/.openclaw/.env. Returns '' if not set."""
-    if not ENV_FILE.exists():
-        return ""
-    try:
-        text = ENV_FILE.read_text(errors="replace")
-    except Exception:
-        return ""
-    for line in text.splitlines():
-        m = re.match(r"^\s*(?:export\s+)?MINIMAX_API_KEY\s*=\s*(\S+)\s*$", line)
-        if m:
-            return m.group(1).strip().strip('"').strip("'")
+    """Read MiniMax API key from ~/.openclaw/.env.
+
+    Tries multiple env var names (API_KEY_VARS) to cover both the
+    international Coding Plan / Standard API key path AND the
+    OAuth-portal-derived token path. The first match wins.
+
+    Also auto-detects from process env (so collectors launched from
+    a shell that has the key set inherit it) and from shell rc files.
+    Returns '' if nothing found.
+    """
+    candidates = []
+    for var in API_KEY_VARS:
+        v = os.environ.get(var)
+        if v:
+            candidates.append((var, v))
+    if ENV_FILE.exists():
+        try:
+            text = ENV_FILE.read_text(errors="replace")
+        except Exception:
+            text = ""
+        for var in API_KEY_VARS:
+            pattern = re.compile(
+                rf"^\s*(?:export\s+)?{re.escape(var)}\s*=\s*(\S+)\s*$",
+                re.MULTILINE,
+            )
+            m = pattern.search(text)
+            if m:
+                candidates.append((var, m.group(1).strip().strip('"').strip("'")))
+
+    # First valid candidate wins
+    for _var, value in candidates:
+        if value:
+            return value
     return ""
 
 
 def fetch_token_plan(api_key):
-    """GET /v1/token_plan/remains with Bearer auth. Returns parsed JSON or raises."""
-    req = urllib.request.Request(
-        f"{API_BASE}/token_plan/remains",
-        headers={"Authorization": f"Bearer {api_key}"},
-    )
-    with urllib.request.urlopen(req, timeout=API_TIMEOUT_SECONDS) as resp:
-        body = resp.read().decode("utf-8", errors="replace")
-        return json.loads(body) if body else {}
+    """GET /v1/token_plan/remains with Bearer auth. Returns parsed JSON or raises.
+
+    Tries the international endpoint first. If the international key is
+    rejected (401/403), retries against the China-mainland endpoint
+    (api.minimaxi.com). This covers users whose API key is region-bound
+    without requiring them to set MINIMAX_BASE_URL manually.
+    """
+    bases = (API_BASE, API_BASE_CN)
+    last_err = None
+    for base in bases:
+        req = urllib.request.Request(
+            f"{base}/token_plan/remains",
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=API_TIMEOUT_SECONDS) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+                return json.loads(body) if body else {}
+        except urllib.error.HTTPError as e:
+            last_err = e
+            # 401/403: key doesn't work on this base, try next base.
+            # Other codes (429, 5xx): propagate — the key is fine, the
+            # API is the problem; fallback wouldn't help.
+            if e.code not in (401, 403):
+                raise
+            continue
+        except Exception:
+            # Network error / timeout / DNS — try the next base once.
+            last_err = None
+            continue
+    # All bases exhausted
+    if last_err is not None:
+        raise last_err
+    raise urllib.error.URLError("All MiniMax endpoints unreachable")
 
 
 def _humanize_seconds(value):
