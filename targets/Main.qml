@@ -283,10 +283,12 @@ Item {
       // them — even if the collector hasn't gotten data yet. That makes the
       // icon clickable so the user can configure the API key via the setup
       // dialog. providerHasData still gates regular agents in enabledProviders.
-      display.kimiNeedsSetup = (id === "kimi" && record.kimiAvailable !== true)
-      // Display-only policy (Josh 2026-08-31): no click-to-setup dialog for Qwen.
-      // Empty ring when key/data unavailable. User fixes their own DashScope setup.
-      display.qwenNeedsSetup = (id === "qwen" && record.qwenAvailable !== true)
+      // needsSetup is now set universally by displayProvider() (above) for
+      // every provider — no per-provider flag-setting here anymore. The
+      // dock renders the icon whenever activeModel matches, with an
+      // empty ring when needsSetup=true (visual signal: "provider
+      // detected but you gotta still do something"). No click-to-setup
+      // UI for any provider.
       result.push(display)
     }
     return result
@@ -399,7 +401,41 @@ Item {
 
       syncEnabled: synced,
       syncDeviceCount: deviceCount,
-      syncUpdatedAt: aggregateData && aggregateData.updatedAt ? aggregateData.updatedAt : ""
+      syncUpdatedAt: aggregateData && aggregateData.updatedAt ? aggregateData.updatedAt : "",
+
+      // Universal "needs setup" signal (Josh 2026-08-31 10:08 PM EDT):
+      // true when this provider is detected but subscription/pay-per-use/
+      // access-config isn't ready. The dock shows the icon; the ring is
+      // empty. The user fixes their own setup in their own environment —
+      // the panel does NOT prompt, troubleshoot, or fix anything.
+      //
+      // Per-provider semantics:
+      //   openclaw, hermes: gateway stopped or not ready
+      //   minimax:          no MINIMAX_API_KEY or token-plan fetch failed
+      //   grok, gemini:     no key, or account blocked
+      //   kimi:             no MOONSHOT_API_KEY or probe failed
+      //   qwen:             no DASHSCOPE_API_KEY or probe failed
+      //   omarchy-core:     always false (omarchy-core collectors only
+      //                     write data when configured; they don't have
+      //                     a "needs setup" state distinct from empty
+      //                     limits[] / balance{})
+      needsSetup: (
+        String(record.id) === "openclaw"
+          ? (record.gatewayState !== "active" && record.ready !== true)
+          : String(record.id) === "hermes"
+            ? (record.gatewayState !== "active" && record.ready !== true)
+            : String(record.id) === "minimax"
+              ? (record.minimaxAvailable !== true)
+              : String(record.id) === "grok"
+                ? (record.ready !== true)
+                : String(record.id) === "gemini"
+                  ? (record.ready !== true)
+                  : String(record.id) === "kimi"
+                    ? (record.kimiAvailable !== true)
+                    : String(record.id) === "qwen"
+                      ? (record.qwenAvailable !== true)
+                      : false
+      )
     }
   }
 
