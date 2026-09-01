@@ -377,7 +377,7 @@ Panel {
       "openai": "#10A37F",
       "grok": "#8B8B8B",
       "gemini": "#4285F4",
-      "openclaw": "#7C3AED",
+      "openclaw": "#FF8C00",
       "fireworks": "#FF6B35",
       "hermes": "#D4AF37",
       "minimax": "#FF0000",
