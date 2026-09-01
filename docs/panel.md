@@ -7,18 +7,35 @@ OpenClaw harness.
 
 ## What the panel shows
 
-The panel is a multi-provider status dashboard. Each **enabled provider**
-gets:
+The panel is a multi-provider status dashboard. There are two kinds of
+entries:
 
-- A dock circle in the bar with the provider's brand-colored progress
-  ring around a greied-out center icon
-- A tab in the panel popup with live data (active model, runtime,
-  rate-limit window, daily usage, etc.)
-- A `today` and a `weekly` meter when the collector emits those fields
+- **Agents** (OpenClaw, Hermes) — full model clients. Always appear in
+  the dock and in the default agent selector menu. Each agent gets:
+  - A dock circle in the bar with the agent's brand-colored progress
+    ring around a greied-out center icon
+  - A tab in the panel popup with live data (active model, runtime,
+    rate-limit window, daily usage, etc.)
+  - A `today` and a `weekly` meter when the collector emits those
+    fields
 
-The dock grows horizontally as more providers are enabled — one circle
-per provider. With a single provider, the dock shows one circle. Adding
-Grok or Gemini (via their collectors) makes the row grow.
+- **Sub-providers** (MiniMax, Kimi, future Qwen/DeepSeek) — model
+  backends. Appear in the dock ONLY when their parent agent is
+  active AND that agent's `activeModel` identifies the sub-provider.
+  Never appear in the default agent selector menu. Each sub-provider
+  gets:
+  - A dock circle in the bar with the sub-provider's brand color ring
+  - A usage/availability ring that reflects the sub-provider's data
+    mode (token-usage numeric, connection fallback, or empty when
+    unconfigured)
+
+The dock is the concatenation of `usage.enabledProviders` (agents)
+and `usage.subProviders` (sub-providers). The dock grows horizontally
+as either type grows. With a single agent + no sub-providers, the
+dock shows one circle. Adding Grok or Gemini (via their collectors)
+makes the agent row grow. Switching the agent's `activeModel` to
+`kimi-k3` makes the Kimi sub-provider circle appear next to the
+agent circle.
 
 The **OpenClaw tab** additionally shows:
 
@@ -32,6 +49,32 @@ When the gateway is offline, OpenClaw's dock circle still shows, but the
 popup collapses to three lines: `○ Gateway offline`, `Runtime: offline`,
 `Discord: offline`. The MiniMax block, version, model, and sessions
 lines are hidden until the gateway comes back.
+
+## Kimi click-to-setup
+
+When a user installs this package fresh and configures OpenClaw or
+Hermes to use a `kimi/*` or `moonshot/*` model BEFORE setting
+`MOONSHOT_API_KEY` in `~/.openclaw/.env`, the Kimi dock icon still
+appears — but with an empty teal ring. Clicking it opens
+`KimiSetupDialog`:
+
+- A modal Popup themed with Kimi's teal (#4ECDC4)
+- A `TextField` with Password echo mode for `MOONSHOT_API_KEY` entry
+- An "Apply" button that runs `/usr/bin/omarchy-set-kimi-key` via
+  Quickshell's `Process`
+- A "Cancel" button to dismiss without saving
+- Status text shows in-progress / success / failure
+- Auto-close on success (exit 0) via `Qt.callLater`
+- Modal + focus-trapped + Esc-to-close
+
+The wrapper (`omarchy-set-kimi-key`) writes `~/.openclaw/.env`
+atomically via a temp file + `os.replace()`, then triggers
+`omarchy-agent-usage-update --force`. Within seconds the Kimi icon
+transitions from empty ring to filled ring (or token-usage bar,
+depending on what `/v1/users/me` returns).
+
+Normal left-click (toggle the panel) is preserved for every other
+provider and for Kimi when it IS configured.
 
 ## Dock color toggle
 

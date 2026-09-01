@@ -10,6 +10,127 @@ cat ~/.local/state/omarchy/agents/usage/openclaw.json | python3 -m json.tool | h
 
 ## Panel doesn't show OpenClaw tab
 
+## Panel doesn't show Kimi icon
+
+**Symptom:** OpenClaw or Hermes is using a Kimi model (e.g.
+`kimi-k3` or `moonshot-v1-8k`), but no Kimi circle appears in the
+dock.
+
+**Causes / fixes:**
+
+1. **`activeModel` doesn't match the Kimi prefix mapping.**
+   Kimi detection accepts both `kimi/*` and `moonshot/*` prefixes.
+   Check what OpenClaw is actually configured to use:
+   ```bash
+   cat ~/.local/state/omarchy/agents/usage/openclaw.json | python3 -c "import json,sys; print(json.load(sys.stdin)['activeModel'])"
+   ```
+   The active model must contain `kimi/` or `moonshot/` as a
+   path separator. Bare names like `kimi-k3` are NOT recognized.
+   Configure OpenClaw properly: `minimax/MiniMax-M3` → `kimi/kimi-k3`
+   (or whichever Kimi model is in your plan).
+
+2. **Collector hasn't run yet / cache is empty.**
+   ```bash
+   ls -la ~/.local/state/omarchy/agents/usage/kimi.json
+   /usr/bin/omarchy-agent-usage-update --force
+   ```
+   Should produce a JSON file. If missing, run the collector
+   directly:
+   ```bash
+   /usr/bin/omarchy-agent-usage-kimi --force 2>&1 | head -30
+   ```
+
+3. **`MOONSHOT_API_KEY` not set.**
+   The Kimi icon will appear with an empty ring when no key is
+   configured (this is the click-to-setup state) — but the user
+   must have set OpenClaw/Hermes to a Kimi model FIRST. If no
+   key AND no Kimi model, nothing shows. Set the key via the
+   dock dialog (click the empty-ring icon) or directly:
+   ```bash
+   echo "MOONSHOT_API_KEY=sk-..." >> ~/.openclaw/.env
+   /usr/bin/omarchy-agent-usage-update --force
+   ```
+
+4. **Sub-provider detection not finding Kimi.**
+   `Main.qml`'s `subProviders` property filters the active agent's
+   `activeModel` against the prefix mapping in `subProviderPrefixes`.
+   Verify by checking the file directly:
+   ```bash
+   grep -A 20 "subProviderPrefixes" /usr/share/omarchy/shell/plugins/agents/Main.qml
+   ```
+
+## Kimi dialog doesn't open when I click the empty-ring icon
+
+**Symptom:** Clicking the Kimi icon (empty teal ring) does nothing.
+
+**Causes / fixes:**
+
+1. **Panel.qml dialog code not loaded.**
+   Verify `KimiSetupDialog` is present:
+   ```bash
+   grep -c "KimiSetupDialog" /usr/share/omarchy/shell/plugins/agents/Panel.qml
+   ```
+   Should be ≥ 1. If 0, reinstall or pull the latest Panel.qml.
+
+2. **Quickshell didn't reload the QML.**
+   Kill and restart Quickshell:
+   ```bash
+   pkill -TERM -f "quickshell -n -p"
+   sleep 4
+   nohup quickshell -n -p >/tmp/quickshell.log 2>&1 &
+   disown
+   ```
+   Wait ~5 seconds for the panel to come back. Check journal:
+   ```bash
+   journalctl --user --since "30 seconds ago" | grep -i "kimi|popup|qml"
+   ```
+
+3. **`kimiNeedsSetup` flag isn't being set.**
+   Check the cache file:
+   ```bash
+   cat ~/.local/state/omarchy/agents/usage/kimi.json | python3 -c "import json,sys; d=json.load(sys.stdin); print('kimiAvailable:', d.get('kimiAvailable'))"
+   ```
+   If `kimiAvailable: true`, the click will toggle the panel (no
+   dialog) — that's correct behavior, the key IS configured.
+
+4. **QML errors in journal.**
+   ```bash
+   journalctl --user --since "1 min ago" | grep -iE "kimi|popup|cannot"
+   ```
+   Look for syntax errors or undefined references.
+
+## Kimi ring shows full but Kimi API calls fail
+
+**Symptom:** Kimi dock circle has a full ring, but OpenClaw/Hermes
+reports API errors when calling Kimi.
+
+**Causes / fixes:**
+
+This is the gap between connection-mode (full ring = key accepted)
+and real token usage. The collector's `kimiRingEmpty` journalctl
+check SHOULD catch recent Kimi/Moonshot errors and force an empty
+ring. If it's not catching them:
+
+1. **Errors aren't in the user journal.**
+   ```bash
+   journalctl --user --since "10 min ago" | grep -iE "kimi|moonshot|api.moonshot.ai"
+   ```
+   If the errors are in OpenClaw's own log file instead of the
+   journal, the collector's `kimiRingEmpty` heuristic won't see
+   them. (This is a known limitation; can be tightened later by
+   also reading `~/.openclaw/logs/` when present.)
+
+2. **Moonshot endpoint returns 200 but is actually rate-limiting.**
+   Some Moonshot responses return 200 with a body indicating the
+   account has no usable balance. The collector doesn't currently
+   parse response bodies beyond `/v1/users/me`. If you're hitting
+   this, set `kimiRingEmpty: true` manually as a workaround:
+   ```bash
+   sudo python3 -c "import json; d=json.load(open('/root/.local/state/omarchy/agents/usage/kimi.json')); d['kimiRingEmpty']=True; json.dump(d, open('/root/.local/state/omarchy/agents/usage/kimi.json','w'), indent=2)"
+   ```
+   (Or open an issue so we can add specific body parsing.)
+
+
 **Symptom:** Open the agents panel (top-right). OpenClaw tab is missing.
 
 **Causes / fixes:**

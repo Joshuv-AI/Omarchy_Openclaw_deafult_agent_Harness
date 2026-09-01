@@ -38,6 +38,12 @@ openclaw-integration/
 │   │                          Collector for Google Gemini (requires GEMINI_API_KEY)
 │   └── omarchy-agent-usage-hermes
 │                              Collector for Nous Hermes (requires install.sh + setup --portal)
+│   ├── omarchy-agent-usage-minimax
+│   │                          Collector for MiniMax token plan (auto-active when OpenClaw is using minimax/* models)
+│   ├── omarchy-agent-usage-kimi
+│   │                          Collector for Kimi (Moonshot AI) — two-stage probe: /v1/users/me for token-usage, /v1/models for connection fallback
+│   └── omarchy-set-kimi-key
+│                              Key-update wrapper for KimiSetupDialog click-to-setup UX (writes ~/.openclaw/.env atomically)
 ├── assets/
 │   ├── claude.svg              Anthropic brand mark (greyed for dock center)
 │   ├── codex.svg               OpenAI brand mark (greyed for dock center)

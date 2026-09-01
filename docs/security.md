@@ -22,6 +22,13 @@ The attacker might attempt to:
 | Path | Owner | Mode |
 |---|---|---|
 | `/usr/bin/omarchy-agent-usage-openclaw` | root | 755 |
+| `/usr/bin/omarchy-agent-usage-grok` | root | 755 (only installed; active when XAI_API_KEY set) |
+| `/usr/bin/omarchy-agent-usage-gemini` | root | 755 (only installed; active when GEMINI_API_KEY set) |
+| `/usr/bin/omarchy-agent-usage-hermes` | root | 755 (only installed; active after `omarchy-setup-hermes` completes) |
+| `/usr/bin/omarchy-agent-usage-minimax` | root | 755 (only installed; active when MINIMAX_API_KEY set) |
+| `/usr/bin/omarchy-agent-usage-kimi` | root | 755 (only installed; auto-appears when OpenClaw/Hermes uses kimi/* model) |
+| `/usr/bin/omarchy-set-kimi-key` | root | 755 (wrapper called from Panel.qml's KimiSetupDialog — writes ~/.openclaw/.env atomically via os.replace) |
+| `/usr/share/omarchy/shell/plugins/agents/Panel.qml` | root | 644 (overwritten; original backed up as `.openclaw-backup`) |
 | `/usr/share/omarchy/shell/plugins/agents/Panel.qml` | root | 644 (overwritten; original backed up as `.openclaw-backup`) |
 | `/usr/share/omarchy/shell/plugins/agents/Main.qml` | root | 644 (overwritten; original backed up as `.openclaw-backup`) |
 | `/usr/share/omarchy/shell/plugins/agents/assets/openclaw.svg` | root | 644 |
@@ -35,6 +42,36 @@ The attacker might attempt to:
 No writes occur outside these paths. `uninstall.sh` reverses everything except user preferences (`~/.config/omarchy/defaults/agent`).
 
 ### Subprocess execution (no `sudo`, no remote calls)
+
+### KimiSetupDialog click-to-setup
+
+`KimiSetupDialog` (Panel.qml) lets the user paste `MOONSHOT_API_KEY`
+into a `TextField` and apply it without touching a terminal. The
+key is NEVER persisted in QML state, NEVER logged, and NEVER echoed
+back to the UI (`TextInput.Password` echo mode).
+
+The dialog calls `/usr/bin/omarchy-set-kimi-key <key>` via Quickshell's
+`Process` component. The wrapper:
+
+- Receives the key as `$1`
+- Writes/updates `~/.openclaw/.env` atomically (write to `.env.tmp`,
+  then `os.replace()`) — readers never see a partial file
+- Runs `omarchy-agent-usage-update --force` to refresh the collector
+- Returns exit 0 on success / non-zero on write failure
+- The key value is NEVER printed to stdout/stderr by the wrapper
+- The key value is NEVER included in the QML status text
+
+**What this means if Panel.qml is compromised:** an attacker with
+write access to Panel.qml can substitute `command: [...]` to read
+the user's key (via `cat ~/.openclaw/.env`) before/after the
+wrapper runs. Mitigation: Panel.qml is root-owned and read-only
+from the user's perspective; users who install this package trust
+the QML surface the same way they trust any other panel component.
+This is consistent with how every other panel click handler
+already works (e.g. agent launchers in `omarchy-menu.jsonc`).
+
+### KimiSetupDialog (Panel.qml, popup)
+
 
 The collector runs these commands (read-only or user-scope):
 

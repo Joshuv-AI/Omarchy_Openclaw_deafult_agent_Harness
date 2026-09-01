@@ -37,7 +37,60 @@ The collector never reads:
 | `XAI_API_KEY` env var | API key value | Process environment |
 | `GET https://api.x.ai/v1/api-key` | Per-model rate limits (rpm/rpd/tpm/tpd) | xAI network |
 
-When `XAI_API_KEY` is unset, the collector writes a minimal record with
+### `omarchy-agent-usage-minimax` (installed but no-op without key)
+
+| Source | What it reads | Where it lives |
+|---|---|---|
+| `MINIMAX_API_KEY` env var | API key value | Process environment |
+| `GET https://www.minimax.io/v1/token_plan/remains` | Per-model current interval + weekly remaining % + reset ms | MiniMax network |
+
+When `MINIMAX_API_KEY` is unset, the collector writes a minimal record with
+`ready: false`. When set, it parses `model_remains[]` and writes:
+- `minimaxAvailable: true/false`
+- `minimaxTokenPlan: { general: { intervalRemainingPct, weeklyRemainingPct, intervalResetMs, weeklyResetMs }, video: {...} }`
+- `activeModel`, `version`, `gatewayState`, `discordState`
+
+### `omarchy-agent-usage-kimi` (installed but invisible without Kimi activeModel)
+
+| Source | What it reads | Where it lives |
+|---|---|---|
+| `MOONSHOT_API_KEY` env var | API key value | Process environment |
+| `GET https://api.moonshot.ai/v1/users/me` | Bearer-auth identity (numeric usage fields if Moonshot returns them — currently undocumented) | Moonshot network |
+| `GET https://api.moonshot.ai/v1/models` | Authenticated availability check (connection-mode fallback) | Moonshot network |
+| `journalctl --user --since "5 min ago"` | Recent OpenClaw/Hermes logs — scans for `kimi|moonshot|MOONSHOT_API_KEY|api.moonshot.ai` patterns to flag API errors | User systemd journal |
+
+**Two-stage probe logic:**
+
+1. Try `/v1/users/me` with the bearer key:
+   - 200 OK → record `kimiUsageMode: "token-usage"`, attempt to parse
+     any numeric remaining fields from the response body (current
+     implementation only sets `kimiAvailable: true`; numeric
+     extraction will be added when Moonshot documents the schema)
+   - 401/403 → key is missing or invalid; record
+     `kimiAvailable: false`, set `authHelpText`
+   - 404 / other error → connection-mode fallback (step 2)
+
+2. If step 1 returned non-numeric or 404, fall back to `/v1/models`:
+   - 200 OK → record `kimiUsageMode: "connection"`, full ring
+   - 401/403 → same as step 1
+   - other → record `kimiAvailable: false`, full error in
+     `kimiError` field
+
+3. Regardless of mode, set `kimiRingEmpty: true` if recent logs
+   mention any Kimi/Moonshot API errors within the last 5 min.
+   Numeric token-usage data overrides log-based empty ring if
+   both are present.
+
+Output: `~/.local/state/omarchy/agents/usage/kimi.json` with fields:
+`id`, `name`, `schemaVersion`, `provider`, `ready`, `installed`,
+`version`, `activeModel`, `kimiAvailable`, `kimiUsageMode`,
+`kimiRingEmpty`, `kimiAccountInfo`, `kimiFetchedAt`, `authHelpText`.
+
+The Kimi icon never appears in the dock unless OpenClaw or Hermes
+is currently using `kimi/*` or `moonshot/*` — see `architecture.md`
+"Sub-providers" section and `Main.qml` `subProviders` property.
+
+When `MOONSHOT_API_KEY` is unset, the collector writes a minimal record with
 `authHelpText` pointing to https://console.x.ai so the panel can
 display a setup hint.
 
