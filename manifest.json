@@ -1,8 +1,8 @@
 {
   "name": "openclaw-integration",
-  "displayName": "OpenClaw + Hermes + MiniMax for Omarchy",
-  "version": "2.2.0",
-  "description": "Installs OpenClaw and Hermes plus two optional collectors (Grok, Gemini) and integrates them into Omarchy's agents panel as a multi-provider dock with brand-colored progress rings. Adds an OpenClaw tab showing gateway state, version, active model, runtime, Discord status, total sessions. Adds a Hermes tab with a mirrored display (gateway/runtime/model/etc.) minus token-usage. Adds a MiniMax tab for token-usage data (5h + weekly bars) — split out of the OpenClaw record so the model data lives with the model, not the agent. Registers lobster OpenClaw + wing Hermes entries in the super space agents submenu. Optionally sets OpenClaw as the default agent.",
+  "displayName": "OpenClaw + Hermes + MiniMax + Kimi for for omArchy",
+  "version": "2.3.0",
+  "description": "Installs OpenClaw and Hermes plus optional optional (Grok,ogk, Gemini) and integrates them into Omarchy's agents panel as a multi-provider dock with brand-colored progress rings. Adds an OpenClaw tab showing gateway state, version, active model, runtime, Discord status, total sessions. Adds a Hermes tab with a mirrored display (gateway/runtime/model/etc.) minus token-usage. Adds a MiniMax tab for token-usage data (5h + weekly bars) — split out of the OpenClaw record so the model data lives with the model, not the agent. Adds a Kimi sub-provider tab — appears in the dock only when OpenClaw/Hermes is using a kimi/* model; click-to-setup dialog for users without MOONSHOT_API_KEY configured. Registers lobster OpenClaw + wing Hermes entries in the the super space agents submenu. Optionally sets OpenClaw as the default agent.",
   "author": {
     "name": "OpenClaw for Omarchy contributors"
   },
@@ -215,6 +215,35 @@
         "cacheFile": "~/.local/state/omarchy/agents/usage/minimax.json",
         "refreshSeconds": 60,
         "networkCalls": "GET https://www.minimax.io/v1/token_plan/remains (only when MINIMAX_API_KEY is set)"
+      },
+      {
+        "path": "bin/omarchy-agent-usage-kimi",
+        "installPath": "/usr/bin/omarchy-agent-usage-kimi",
+        "agentId": "kimi",
+        "agentName": "Kimi (Moonshot AI)",
+        "interface": "omarchy-agent-usage",
+        "category": "model-provider",
+        "activeByDefault": false,
+        "activation": "MOONSHOT_API_KEY in ~/.openclaw/.env (auto-set by openclaw onboard) OR user can set it via the KimiSetupDialog in the dock panel",
+        "outputSchema": {
+          "id": "string",
+          "name": "string",
+          "schemaVersion": "number",
+          "provider": "string",
+          "ready": "boolean",
+          "installed": "boolean",
+          "version": "string",
+          "activeModel": "string",
+          "kimiAvailable": "boolean",
+          "kimiUsageMode": "string (none | token-usage | connection)",
+          "kimiRingEmpty": "boolean",
+          "kimiAccountInfo": "object (only set when usageMode=token-usage)",
+          "kimiFetchedAt": "string",
+          "authHelpText": "string"
+        },
+        "cacheFile": "~/.local/state/omarchy/agents/usage/kimi.json",
+        "refreshSeconds": 60,
+        "networkCalls": "GET https://api.moonshot.ai/v1/users/me (Bearer auth) — token-usage probe; GET https://api.moonshot.ai/v1/models — connection fallback when /users/me doesn't return numeric usage data"
       }
     ],
     "panelPatch": {
@@ -275,6 +304,11 @@
         "purpose": "MiniMax stylized M (greied)"
       },
       {
+        "path": "assets/kimi.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/kimi.svg",
+        "purpose": "Kimi brand mark (greied, base64-embedded PNG)"
+      },
+      {
         "path": "assets/openclaw.svg",
         "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/openclaw.svg",
         "purpose": "Lobster emoji with grayscale filter"
@@ -325,7 +359,11 @@
         "~/.local/state/omarchy/agents/usage/hermes.json",
         "/usr/bin/omarchy-agent-usage-minimax",
         "/usr/share/omarchy/shell/plugins/agents/assets/minimax.svg",
-        "~/.local/state/omarchy/agents/usage/minimax.json"
+        "~/.local/state/omarchy/agents/usage/minimax.json",
+        "/usr/bin/omarchy-agent-usage-kimi",
+        "/usr/bin/omarchy-set-kimi-key",
+        "/usr/share/omarchy/shell/plugins/agents/assets/kimi.svg",
+        "~/.local/state/omarchy/agents/usage/kimi.json"
       ],
       "sudo": "yes (for /usr/bin/ and /usr/share/omarchy/ paths only)",
       "notes": "No writes outside the paths listed. uninstall.sh restores system files from .openclaw-backup created at install time."
@@ -346,7 +384,8 @@
         "ps -o etime= -p <pid>",
         "curl -fsSL https://hermes-agent.nousresearch.com/install.sh",
         "hermes setup --portal (interactive)",
-        "command -v openclaw (for env lookup, not for detection)"
+        "command -v openclaw (for env lookup, not for detection)",
+        "omarchy-set-kimi-key <MOONSHOT_API_KEY> (called from Panel.qml's KimiSetupDialog)"
       ],
       "remoteCode": "no",
       "polkit": "no",
