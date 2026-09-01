@@ -949,7 +949,10 @@ Panel {
 
           Column {
             id: usageSection
-            visible: !!root.provider && root.provider.recentDays && root.provider.recentDays.length > 0
+            // Visible if there's recentDays data (generic chart) OR if this is a
+            // specific provider block (OpenClaw/Hermes/MiniMax) that has its own
+            // content even without session counters.
+            visible: !!root.provider && (usageSection.isOpenClaw || usageSection.isHermes || usageSection.isMiniMax || (root.provider.recentDays && root.provider.recentDays.length > 0))
             width: parent.width
             spacing: Style.spacing.md
 
