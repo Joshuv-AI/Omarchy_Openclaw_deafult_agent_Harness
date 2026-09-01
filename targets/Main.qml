@@ -305,6 +305,7 @@ Item {
   // All-time keeps a quiet day from hiding an agent; today's counts admit a
   // machine whose only source is history.jsonl, which knows nothing older.
   function providerHasData(p) {
+    if (!p) return false
     return numberValue(p.totalPrompts) > 0 || numberValue(p.totalSessions) > 0
       || numberValue(p.activeDays) > 0 || numberValue(p.todayPrompts) > 0
       || numberValue(p.todaySessions) > 0 || (p.limits && p.limits.length > 0)
@@ -321,6 +322,12 @@ Item {
       // Qwen sub-provider: same pattern as Kimi. No session/activity
       // counters — only the Bearer-authenticated /models probe result.
       || (p.qwenAvailable === true)
+      // Safety net: if a collector reports ready=true the provider is
+      // genuinely configured and connected — show the dock icon even if
+      // no other data fields match the conditions above. Prevents a
+      // "Codex incident" where a working CLI doesn't appear because the
+      // collector's data shape doesn't match any of the specific branches.
+      || p.ready === true
   }
 
   // A prepaid agent's credit ledger. Like rate limits, the balance is
