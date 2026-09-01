@@ -220,9 +220,22 @@ def main():
                 "and the account has available balance."
             )
 
-    # Stage 3: local log signal (only matters in connection mode)
+    # Stage 2.5 + Stage 3: connection-mode ring-empty signals.
+    # In connection mode the ring is full unless one of the following
+    # empty triggers fires:
+    #   - balance ≤ 0 USD on /v1/users/me/balance (out of credit)
+    #   - recent journalctl errors mentioning kimi/moonshot
+    # We combine them with OR: any empty trigger sets the ring empty.
     if base["kimiUsageMode"] == "connection":
-        base["kimiRingEmpty"] = recent_kimi_errors()
+        bal_empty = False
+        bal_status, bal_payload = http_get("/users/me/balance", api_key)
+        if bal_status == 200 and isinstance(bal_payload, dict):
+            bal_data = bal_payload.get("data", {})
+            if isinstance(bal_data, dict):
+                avail = bal_data.get("available_balance")
+                if isinstance(avail, (int, float)) and avail <= 0:
+                    bal_empty = True
+        base["kimiRingEmpty"] = bal_empty or recent_kimi_errors()
 
     write_record(base)
 
