@@ -38,7 +38,7 @@ done
 # --- 2. Remove collectors ---
 echo
 echo "[2/5] Removing collectors..."
-for collector in omarchy-agent-usage-openclaw omarchy-agent-usage-grok omarchy-agent-usage-gemini omarchy-agent-usage-hermes omarchy-agent-usage-minimax omarchy-agent-usage-kimi omarchy-agent-usage-qwen omarchy-setup-hermes omarchy-set-kimi-key; do
+for collector in omarchy-agent-usage-openclaw omarchy-agent-usage-grok omarchy-agent-usage-gemini omarchy-agent-usage-hermes omarchy-agent-usage-minimax omarchy-agent-usage-kimi omarchy-agent-usage-qwen; do
     dst="/usr/bin/$collector"
     if [ -f "$dst" ]; then
         sudo rm -f "$dst"

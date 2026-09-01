@@ -398,7 +398,7 @@
         "/usr/share/omarchy/shell/plugins/agents/assets/minimax.svg",
         "~/.local/state/omarchy/agents/usage/minimax.json",
         "/usr/bin/omarchy-agent-usage-kimi",
-        "/usr/bin/omarchy-set-kimi-key",
+        "",
         "/usr/share/omarchy/shell/plugins/agents/assets/kimi.svg",
         "~/.local/state/omarchy/agents/usage/kimi.json",
         "/usr/bin/omarchy-agent-usage-qwen",
@@ -425,7 +425,7 @@
         "curl -fsSL https://hermes-agent.nousresearch.com/install.sh",
         "hermes setup --portal (interactive)",
         "command -v openclaw (for env lookup, not for detection)",
-        "omarchy-set-kimi-key <MOONSHOT_API_KEY> (called from Panel.qml's KimiSetupDialog)"
+        " <MOONSHOT_API_KEY> (called from Panel.qml's KimiSetupDialog)"
       ],
       "remoteCode": "no",
       "polkit": "no",

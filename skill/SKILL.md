@@ -65,7 +65,7 @@ Full architecture: see [`docs/architecture.md`](../docs/architecture.md).
 | `bin/omarchy-agent-usage-qwen` | Collector: Qwen Bearer-auth /models probe | Yes |
 | `bin/omarchy-agent-usage-grok` | Collector (opt-in): xAI Grok rate limits | Yes |
 | `bin/omarchy-agent-usage-gemini` | Collector (opt-in): Google Gemini rate limits | Yes |
-| `bin/omarchy-set-kimi-key` | Shell-only MOONSHOT_API_KEY updater | Yes (no panel surface) |
+| `bin/` | Shell-only MOONSHOT_API_KEY updater | Yes (no panel surface) |
 | `targets/Panel.qml` | Omarchy's panel + OpenClaw gateway block + Hermes gateway block + MiniMax usage block | Yes — only the OpenClaw/Hermes sections |
 | `targets/Main.qml` | Omarchy's displayProvider + OpenClaw + Hermes field forwarding | Yes — only inside `displayProvider()` |
 | `assets/openclaw.svg`, `openclaw-light.svg` | OpenClaw dock icons (dark + light) | Yes |

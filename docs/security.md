@@ -25,11 +25,11 @@ The attacker might attempt to:
 | `/usr/bin/omarchy-agent-usage-openclaw` | root | 755 |
 | `/usr/bin/omarchy-agent-usage-grok` | root | 755 (only installed; active when XAI_API_KEY set) |
 | `/usr/bin/omarchy-agent-usage-gemini` | root | 755 (only installed; active when GEMINI_API_KEY set) |
-| `/usr/bin/omarchy-agent-usage-hermes` | root | 755 (only installed; active after `omarchy-setup-hermes` completes) |
+| `/usr/bin/omarchy-agent-usage-hermes` | root | 755 (only installed; active after `` completes) |
 | `/usr/bin/omarchy-agent-usage-minimax` | root | 755 (only installed; active when MINIMAX_API_KEY set) |
 | `/usr/bin/omarchy-agent-usage-kimi` | root | 755 (only installed; auto-appears when OpenClaw/Hermes uses kimi/* model) |
 | `/usr/bin/omarchy-agent-usage-qwen` | root | 755 (only installed; auto-appears when OpenClaw/Hermes uses qwen/* or dashscope/* model — display-only, no setup UI) |
-| `/usr/bin/omarchy-set-kimi-key` | root | 755 (shell-only key-update wrapper for users who want to set MOONSHOT_API_KEY from a script — no panel surface, the panel does not prompt; writes ~/.openclaw/.env atomically via os.replace) |
+|  | root | 755 (shell-only key-update wrapper for users who want to set MOONSHOT_API_KEY from a script — no panel surface, the panel does not prompt; writes ~/.openclaw/.env atomically via os.replace) |
 | `/usr/share/omarchy/shell/plugins/agents/Panel.qml` | root | 644 (overwritten; original backed up as `.openclaw-backup`) |
 | `/usr/share/omarchy/shell/plugins/agents/Panel.qml` | root | 644 (overwritten; original backed up as `.openclaw-backup`) |
 | `/usr/share/omarchy/shell/plugins/agents/Main.qml` | root | 644 (overwritten; original backed up as `.openclaw-backup`) |

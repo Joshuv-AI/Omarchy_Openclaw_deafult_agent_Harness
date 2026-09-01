@@ -121,13 +121,13 @@ omarchy-agent-panel-repo/
     omarchy-agent-usage-qwen           collector: Qwen Bearer-auth /models probe
     omarchy-agent-usage-grok           collector (opt-in): xAI Grok rate limits
     omarchy-agent-usage-gemini         collector (opt-in): Google Gemini rate limits
-    omarchy-set-kimi-key               shell-only MOONSHOT_API_KEY updater (display-only panel never prompts)
+                   shell-only MOONSHOT_API_KEY updater (display-only panel never prompts)
   assets/
     openclaw.svg                       lobster icon (dark)
     openclaw-light.svg                 lobster icon (light)
     hermes.svg                          wing icon (dark) — Nous Hermes messenger symbol
     minimax.svg, kimi.svg, qwen.svg    sub-provider brand icons
-    grok.svg, gemini.svg, claude.svg, codex.svg, codex-light.svg, fireworks.svg, omp.svg, opencode.svg, pi.svg, copilot.svg, crush.svg
+    grok.svg, gemini.svg, claude.svg, codex.svg, codex-light.svg, fireworks.svg, , , , , 
   targets/
     Panel.qml                          Omarchy stock + gateway rings + MiniMax usage block
     Main.qml                           Omarchy stock + displayProvider() forwards for both agents

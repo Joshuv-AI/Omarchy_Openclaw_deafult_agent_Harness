@@ -208,7 +208,7 @@ The 60s collector cadence applies to **all** collectors through the single `omar
 | `bin/omarchy-agent-usage-qwen` | `/usr/bin/` |
 | `bin/omarchy-agent-usage-grok` | `/usr/bin/` (installed; active when key set) |
 | `bin/omarchy-agent-usage-gemini` | `/usr/bin/` (installed; active when key set) |
-| `bin/omarchy-set-kimi-key` | `/usr/bin/` |
+| `bin/` | `/usr/bin/` |
 | `assets/openclaw.svg`, `assets/hermes.svg`, `assets/minimax.svg`, etc. | `/usr/share/omarchy/shell/plugins/agents/assets/` |
 | `targets/Panel.qml` | `/usr/share/omarchy/shell/plugins/agents/Panel.qml` |
 | `targets/Main.qml` | `/usr/share/omarchy/shell/plugins/agents/Main.qml` |

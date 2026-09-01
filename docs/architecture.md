@@ -44,14 +44,14 @@ omarchy-agent-panel-repo/
 │   │                          Collector (opt-in) for xAI Grok — requires XAI_API_KEY
 │   ├── omarchy-agent-usage-gemini
 │   │                          Collector (opt-in) for Google Gemini — requires GEMINI_API_KEY or GOOGLE_API_KEY
-│   └── omarchy-set-kimi-key   Shell-only key-update wrapper for users who want to set MOONSHOT_API_KEY from a script (no panel surface — panel does NOT prompt)
+│   └──    Shell-only key-update wrapper for users who want to set MOONSHOT_API_KEY from a script (no panel surface — panel does NOT prompt)
 ├── assets/
 │   ├── openclaw.svg            Lobster emoji with grayscale filter (OpenClaw dock center)
 │   ├── openclaw-light.svg      Same, light-theme variant
 │   ├── hermes.svg              Wing icon — Nous Hermes messenger symbol (Hermes dock center)
 │   ├── minimax.svg             MiniMax brand mark (red `#FF0000`)
 │   ├── kimi.svg, qwen.svg      Sub-provider brand marks
-│   ├── grok.svg, gemini.svg, claude.svg, codex.svg, codex-light.svg, fireworks.svg, omp.svg, opencode.svg, pi.svg, copilot.svg, crush.svg  Other provider icons
+│   ├── grok.svg, gemini.svg, claude.svg, codex.svg, codex-light.svg, fireworks.svg, , , , ,   Other provider icons
 ├── targets/
 │   ├── Panel.qml               Omarchy stock + dock row + OpenClaw gateway block + Hermes gateway block + MiniMax usage block
 │   ├── Main.qml                Omarchy stock + displayProvider() forwards for OpenClaw and Hermes

@@ -81,10 +81,8 @@ if command -v openclaw >/dev/null 2>&1; then
     fi
 fi
 
-# --- 2. Collector scripts ---
 echo
 # --- 2. Hermes presence check + onboard (if missing) ---
-echo
 echo "[2/8] Hermes presence check..."
 if ! command -v hermes >/dev/null 2>&1; then
     echo "    Hermes not found."
@@ -110,7 +108,7 @@ fi
 
 # --- 2b. Hermes setup (portal auth + onboarding) ---
 echo
-echo "    [2/8 cont.] Running hermes setup --portal (one-time auth)..."
+echo "    [2/8] (cont.) Running hermes setup --portal (one-time auth)..."
 if command -v hermes >/dev/null 2>&1; then
     # hermes setup --portal is interactive. If user has already configured portal,
     # it's a no-op. Otherwise it opens a browser for OAuth.

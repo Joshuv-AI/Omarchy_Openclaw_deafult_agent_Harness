@@ -3,8 +3,6 @@
 Common issues and fixes. If your issue isn't here, check the cache file
 for the affected provider:
 
-
-
 ## Provider ring is empty — what it means
 
 The empty ring is a **universal signal** (Josh 2026-08-31 10:08 PM EDT):
@@ -17,7 +15,7 @@ in their own environment.
   | provider    | empty ring means...                            |
   | ----------- | ---------------------------------------------- |
   | openclaw    | Gateway is stopped. Run `omarchy start`.       |
-  | hermes      | Gateway is stopped. Run `omarchy-setup-hermes`.|
+  | hermes      | Gateway is stopped. Run ``.|
   | minimax     | No `MINIMAX_API_KEY` set OR token-plan fetch    |
   |             | failed. Set the key in any of the 5 locations.  |
   | grok        | No `XAI_API_KEY` set OR account blocked. Check |
@@ -102,7 +100,6 @@ dock.
    grep -A 20 "subProviderPrefixes" /usr/share/omarchy/shell/plugins/agents/Main.qml
    ```
 
-
 ## Kimi ring shows full but Kimi API calls fail
 
 **Symptom:** Kimi dock circle has a full ring, but OpenClaw/Hermes
@@ -133,7 +130,6 @@ ring. If it's not catching them:
    sudo python3 -c "import json; d=json.load(open('/root/.local/state/omarchy/agents/usage/kimi.json')); d['kimiRingEmpty']=True; json.dump(d, open('/root/.local/state/omarchy/agents/usage/kimi.json','w'), indent=2)"
    ```
    (Or open an issue so we can add specific body parsing.)
-
 
 **Symptom:** Open the agents panel (top-right). OpenClaw tab is missing.
 
@@ -306,7 +302,6 @@ sudo cp /usr/share/omarchy/shell/plugins/agents/Main.qml.openclaw-backup \
 pkill -TERM -f 'quickshell -n -p /usr/share/omarchy/shell'
 ```
 
-
 ## Hermes dock circle is missing
 
 **Symptom:** After installing Hermes, no circle appears in the agents dock.
@@ -350,7 +345,6 @@ If the daemon is running but the ring still doesn't fill, force a refresh:
 /usr/bin/omarchy-agent-usage-hermes --force
 pkill -TERM -f 'quickshell -n -p /usr/share/omarchy/shell'
 ```
-
 
 ## MiniMax dock circle is missing or shows empty data
 
