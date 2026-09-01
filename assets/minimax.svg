@@ -1,4 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="#888888">
-  <!-- MiniMax mark — stylized M (greied to match all other dock icons). -->
-  <path d="M 32 224 L 32 32 L 80 32 L 128 144 L 176 32 L 224 32 L 224 224 L 192 224 L 192 96 L 144 208 L 112 208 L 64 96 L 64 224 Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- MiniMax mark: stylized M with rounded waveform strokes (greied to match dock convention) -->
+  <g fill="none" stroke="#888888" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 40 208
+             L 40 72
+             Q 40 40 72 40
+             Q 104 40 104 72
+             L 104 168
+             L 152 168
+             L 152 72
+             Q 152 40 184 40
+             Q 216 40 216 72
+             L 216 208"/>
+  </g>
 </svg>
+
