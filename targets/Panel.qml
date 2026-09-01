@@ -637,6 +637,8 @@ Panel {
 
           MouseArea {
             anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
             acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
             onClicked: function(mouse) {
               if (mouse.button === Qt.RightButton) {
@@ -995,7 +997,7 @@ Panel {
 
             // ---- MiniMax usage block (MiniMax-site style: limit label + reset + progress bar + percent used) ----
             Column {
-              visible: usageSection.isMiniMax && root.provider && root.provider.gatewayState === "active" && root.provider.minimaxAvailable === true
+              visible: usageSection.isMiniMax && root.provider && root.provider.minimaxAvailable === true
               width: parent.width
               spacing: Style.space(10)
               topPadding: Style.space(2)
