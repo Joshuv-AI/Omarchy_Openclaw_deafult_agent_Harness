@@ -24,15 +24,6 @@
     "allowMultiple": false,
     "defaults": {
       "providers": {
-        "claude": {
-          "enabled": true
-        },
-        "codex": {
-          "enabled": true
-        },
-        "fireworks": {
-          "enabled": true
-        },
         "grok": {
           "enabled": true
         },
