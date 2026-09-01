@@ -282,6 +282,12 @@ Item {
       tierLabel: String(record.tierLabel || ""),
       balance: balanceValue(record.balance),
 
+      // MiniMax token-usage data. Pass through unchanged so providerHasData()
+      // can recognize a MiniMax record as having data (it has no session
+      // counters, only usage rates from the token-plan endpoint).
+      minimaxAvailable: record.minimaxAvailable === true,
+      minimaxTokenPlan: record.minimaxTokenPlan && typeof record.minimaxTokenPlan === "object" ? record.minimaxTokenPlan : null,
+
       todayPrompts: synced ? numberValue(stats.todayPrompts) : numberValue(record.todayPrompts),
       todaySessions: synced ? numberValue(stats.todaySessions) : numberValue(record.todaySessions),
       todayTotalTokens: synced ? numberValue(stats.todayTotalTokens) : numberValue(record.todayTotalTokens),
