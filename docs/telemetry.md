@@ -91,6 +91,42 @@ is currently using `kimi/*` or `moonshot/*` — see `architecture.md`
 "Sub-providers" section and `Main.qml` `subProviders` property.
 
 When `MOONSHOT_API_KEY` is unset, the collector writes a minimal record with
+
+### `omarchy-agent-usage-qwen` (installed but invisible without Qwen activeModel)
+
+| Source | What it reads | Where it lives |
+|---|---|---|
+| `DASHSCOPE_API_KEY` env var | API key value | Process environment |
+| `QWEN_BASE_URL` env var (optional) | Custom DashScope base URL | Process environment |
+| `~/.openclaw/.env` | API key + base URL | User's home |
+| `~/.bashrc`, `~/.bash_profile`, `~/.zshrc`, `~/.profile` | `export DASHSCOPE_API_KEY=...` and `export QWEN_BASE_URL=...` lines | User's home |
+| `/proc/<pid>/environ` of running OpenClaw or Hermes process | Inherited env vars from any user-owned process | `/proc` |
+| `systemctl --user show ...EnvironmentFiles` | OpenClaw/Hermes systemd EnvironmentFile | User systemd |
+| `GET ${QWEN_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}/models` | Authenticated availability check | DashScope network |
+
+**Five-location auto-detect priority chain:**
+
+1. process environment (inherited from launching shell)
+2. `~/.openclaw/.env` (OpenClaw standard)
+3. shell rc files (`~/.bashrc`, `~/.bash_profile`, `~/.zshrc`, `~/.profile`)
+4. running OpenClaw or Hermes process environment via `/proc/<pid>/environ` (picks up the key from any user-owned process that's already loaded it)
+5. systemd `EnvironmentFile=` for `openclaw-gateway.service` / `hermes-gateway.service`
+
+The first source that returns a non-empty value wins. The source is recorded as `qwenKeySource` and `qwenBaseUrlSource` in the output.
+
+**No numeric quota API exists** — DashScope documents only dynamic monthly tier-based TPM at console level (no public REST endpoint for remaining quota). The collector therefore performs a **single authenticated `GET /models` Bearer probe**:
+
+- 200 → `qwenAvailable: true`, `qwenUsageMode: "connection"`, full purple ring (#8B5CF6)
+- 401 / 403 → `qwenAvailable: false`, `qwenError` populated, empty ring
+- network error → `qwenAvailable: false`, `qwenError` populated, empty ring
+
+**Display-only policy:** the collector writes `authHelpText: ""` (always empty string). No troubleshooting text, no fix prompts, no setup URLs. The user fixes their own DashScope / Bailian configuration in their own environment.
+
+**Default `QWEN_BASE_URL`**: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` (DashScope international endpoint). International accounts work OOTB; China-mainland users set `QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1` in any of the 5 detection locations and it just works. No region selection UI in the panel — users pick their endpoint by setting the env var where they normally configure environment variables.
+
+Output: `~/.local/state/omarchy/agents/usage/qwen.json` with fields: `id`, `name`, `schemaVersion`, `provider`, `ready`, `installed`, `version`, `fetchedAt`, `qwenAvailable`, `qwenUsageMode`, `qwenRingEmpty`, `qwenBaseUrl`, `qwenBaseUrlSource`, `qwenKeySource`, `qwenModelCount`, `qwenError`, `authHelpText` (always empty).
+
+The Qwen icon never appears in the dock unless OpenClaw or Hermes is currently using `qwen/*` or `dashscope/*` — see `architecture.md` "Sub-providers" section and `Main.qml` `subProviders` property.
 `authHelpText` pointing to https://console.x.ai so the panel can
 display a setup hint.
 

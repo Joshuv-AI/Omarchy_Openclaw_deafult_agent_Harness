@@ -42,8 +42,11 @@ openclaw-integration/
 │   │                          Collector for MiniMax token plan (auto-active when OpenClaw is using minimax/* models)
 │   ├── omarchy-agent-usage-kimi
 │   │                          Collector for Kimi (Moonshot AI) — two-stage probe: /v1/users/me for token-usage, /v1/models for connection fallback
-│   └── omarchy-set-kimi-key
-│                              Key-update wrapper for KimiSetupDialog click-to-setup UX (writes ~/.openclaw/.env atomically)
+│   ├── omarchy-set-kimi-key
+│   │                          Key-update wrapper for KimiSetupDialog click-to-setup UX (writes ~/.openclaw/.env atomically)
+│   ├── omarchy-agent-usage-qwen
+│   │                          Collector for Qwen (Alibaba DashScope) — single Bearer-auth /models probe; auto-detects DASHSCOPE_API_KEY + QWEN_BASE_URL from 5 locations
+│   └── (no Qwen setup wrapper — display-only policy)
 ├── assets/
 │   ├── claude.svg              Anthropic brand mark (greyed for dock center)
 │   ├── codex.svg               OpenAI brand mark (greyed for dock center)

@@ -27,6 +27,7 @@ The attacker might attempt to:
 | `/usr/bin/omarchy-agent-usage-hermes` | root | 755 (only installed; active after `omarchy-setup-hermes` completes) |
 | `/usr/bin/omarchy-agent-usage-minimax` | root | 755 (only installed; active when MINIMAX_API_KEY set) |
 | `/usr/bin/omarchy-agent-usage-kimi` | root | 755 (only installed; auto-appears when OpenClaw/Hermes uses kimi/* model) |
+| `/usr/bin/omarchy-agent-usage-qwen` | root | 755 (only installed; auto-appears when OpenClaw/Hermes uses qwen/* or dashscope/* model — display-only, no setup UI) |
 | `/usr/bin/omarchy-set-kimi-key` | root | 755 (wrapper called from Panel.qml's KimiSetupDialog — writes ~/.openclaw/.env atomically via os.replace) |
 | `/usr/share/omarchy/shell/plugins/agents/Panel.qml` | root | 644 (overwritten; original backed up as `.openclaw-backup`) |
 | `/usr/share/omarchy/shell/plugins/agents/Panel.qml` | root | 644 (overwritten; original backed up as `.openclaw-backup`) |
@@ -69,6 +70,31 @@ from the user's perspective; users who install this package trust
 the QML surface the same way they trust any other panel component.
 This is consistent with how every other panel click handler
 already works (e.g. agent launchers in `omarchy-menu.jsonc`).
+
+### Qwen collector (display-only)
+
+The Qwen sub-provider collector
+(`omarchy-agent-usage-qwen`) is strictly display-only:
+
+- Reads `DASHSCOPE_API_KEY` + `QWEN_BASE_URL` from the user's
+  environment (no writes back)
+- Performs a single authenticated `GET /models` Bearer probe to
+  DashScope to determine ring state
+- Writes its result JSON to
+  `~/.local/state/omarchy/agents/usage/qwen.json` — no other
+  filesystem writes
+- Never writes `authHelpText` with troubleshooting instructions
+  (the field is always empty per display-only policy)
+- Has no click-to-setup dialog, no fix-prompt UI, no setup
+  workflow
+
+**Threat surface:** same as any other read-only collector. An
+attacker with write access to `bin/omarchy-agent-usage-qwen`
+can substitute the probe endpoint to leak the key (e.g. POST to
+their own server). Mitigation: the collector is root-owned and
+read-only from the user's perspective; users who install this
+package trust the collector binary the same way they trust
+every other collector shipped here.
 
 ### KimiSetupDialog (Panel.qml, popup)
 

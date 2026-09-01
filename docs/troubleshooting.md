@@ -376,3 +376,113 @@ pkill -TERM -f 'quickshell -n -p /usr/share/omarchy/shell'
 - `architecture.md` — how collectors fit together
 - `panel.md` — what the user sees
 - `telemetry.md` — what data flows where
+
+## Panel doesn't show Qwen icon
+
+**Symptom:** OpenClaw or Hermes is using a Qwen model (e.g.
+`qwen3-max` or `dashscope/qwen3-8b`), but no Qwen circle appears
+in the dock.
+
+**Causes / fixes (display-only — panel does not fix anything):**
+
+1. **`activeModel` doesn't match the Qwen prefix mapping.**
+   Qwen detection accepts both `qwen/*` and `dashscope/*` prefixes.
+   Check what OpenClaw is actually configured to use:
+   ```bash
+   cat ~/.local/state/omarchy/agents/usage/openclaw.json | python3 -c "import json,sys; print(json.load(sys.stdin)['activeModel'])"
+   ```
+   The active model must contain `qwen/` or `dashscope/` as a
+   path separator. Bare names like `qwen3-max` are NOT recognized.
+
+2. **OpenClaw or Hermes itself is not active.**
+   The panel only shows the Qwen icon when one of the parent
+   agents (OpenClaw or Hermes) is running and using a Qwen model.
+   No parent agent → no Qwen icon, regardless of collector state.
+
+3. **`DASHSCOPE_API_KEY` not found in any detection location.**
+   The panel shows the icon (because `activeModel` matched) but
+   the ring is empty (because the collector couldn't pull data).
+   This is the expected display-only behavior — the user fixes
+   their own DashScope / Bailian setup.
+   ```bash
+   cat ~/.local/state/omarchy/agents/usage/qwen.json | python3 -m json.tool | head -25
+   ```
+   Look at `qwenKeySource` — if it's `"missing"`, set
+   `DASHSCOPE_API_KEY` in any of the 5 detection locations:
+     - process environment
+     - `~/.openclaw/.env`
+     - shell rc file (`~/.bashrc`, `~/.zshrc`, etc.)
+     - running OpenClaw/Hermes process environment
+     - systemd `EnvironmentFile=`
+
+4. **Wrong region / endpoint.**
+   The default is `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`
+   (international). China-mainland accounts need
+   `QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
+   set in any of the 5 detection locations.
+
+5. **Sub-provider detection not finding Qwen.**
+   `Main.qml`'s `subProviders` property filters the active agent's
+   `activeModel` against the prefix mapping in `subProviderPrefixes`.
+   Verify by checking the file directly:
+   ```bash
+   grep -A 5 "subProviderPrefixes" /usr/share/omarchy/shell/plugins/agents/Main.qml
+   ```
+
+**What the panel will NOT do** (display-only policy):
+
+  - Open a setup dialog prompting you to paste your API key
+  - Show a "fix it" button or troubleshooting URL
+  - Tell you to check your DashScope console
+  - Suggest any configuration change
+
+If the ring is empty, that's the only signal you get. Fix the
+upstream setup (set the key, switch region, refresh the gateway)
+and the ring will fill on the next collector refresh (~60s).
+
+## Qwen ring shows empty but Qwen is configured correctly
+
+**Symptom:** Qwen dock circle has an empty purple ring even though
+you've set `DASHSCOPE_API_KEY` and the agent is actively using a
+Qwen model.
+
+**Causes / fixes:**
+
+1. **Collector hasn't run yet / cache is stale.**
+   ```bash
+   ls -la ~/.local/state/omarchy/agents/usage/qwen.json
+   /usr/bin/omarchy-agent-usage-update --force
+   ```
+   Should produce a JSON file ≥ 1 KB.
+
+2. **Collector exited with error.**
+   ```bash
+   /usr/bin/omarchy-agent-usage-qwen --force 2>&1 | head -50
+   ```
+   Look for tracebacks. The collector writes `qwenError` to the
+   JSON when the probe fails.
+
+3. **Key found in one location, but probe still fails.**
+   ```bash
+   cat ~/.local/state/omarchy/agents/usage/qwen.json | python3 -c "import json,sys; d=json.load(sys.stdin); print('keySource:', d.get('qwenKeySource'), 'error:', d.get('qwenError'))"
+   ```
+   - `keySource: missing` → key not found anywhere; set it
+   - `keySource: openclaw-env` (or any other) + `error: HTTP 401`
+     → key was found but rejected. User fixes their own key.
+   - `keySource: ...` + `error: network: ...` → endpoint
+     unreachable. Check firewall / DNS / VPN. The panel will not
+     diagnose or fix this.
+
+4. **Wrong endpoint for region.**
+   Set `QWEN_BASE_URL` in the same env location as the key:
+   ```bash
+   # China-mainland
+   echo "QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1" >> ~/.openclaw/.env
+   echo "DASHSCOPE_API_KEY=***" >> ~/.openclaw/.env
+   /usr/bin/omarchy-agent-usage-update --force
+   ```
+
+The panel will display whatever state the collector reports. If
+the collector reports `qwenAvailable: false`, the ring is empty.
+That's it. User fixes the upstream issue.
+

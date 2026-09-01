@@ -19,7 +19,7 @@ entries:
   - A `today` and a `weekly` meter when the collector emits those
     fields
 
-- **Sub-providers** (MiniMax, Kimi, future Qwen/DeepSeek) — model
+- **Sub-providers** (MiniMax, Kimi, Qwen, future DeepSeek) — model
   backends. Appear in the dock ONLY when their parent agent is
   active AND that agent's `activeModel` identifies the sub-provider.
   Never appear in the default agent selector menu. Each sub-provider
@@ -75,6 +75,31 @@ depending on what `/v1/users/me` returns).
 
 Normal left-click (toggle the panel) is preserved for every other
 provider and for Kimi when it IS configured.
+
+## Display-only policy
+
+**Universal rule (Josh 2026-08-31 9:51 PM EDT):** The agents panel
+is strictly a **display-only** surface for every provider it shows.
+It does not configure, troubleshoot, suggest fixes for, or
+otherwise intervene in any provider's setup.
+
+**What this means concretely:**
+  - If a provider is detected (icon appears in dock), we pull
+    whatever data is available and display it
+  - If the data pull fails (no key, bad key, expired plan, network
+    down, agent offline), the ring is empty and we stop
+  - The user is responsible for fixing their own setup if
+    anything is wrong
+
+**Why Qwen has no click-to-setup dialog** (even though Kimi has
+one): Kimi landed first with a dialog for first-time setup. Qwen
+shipped under the stricter display-only rule that Josh confirmed
+after the Kimi plan was already approved. The Kimi dialog may be
+retrofitted in a future commit to match Qwen's behavior — TBD.
+
+**Applies to all providers** — OpenClaw, Hermes, Grok, Gemini,
+MiniMax, Kimi, Qwen, and any future sub-provider added. No
+exceptions.
 
 ## Dock color toggle
 
