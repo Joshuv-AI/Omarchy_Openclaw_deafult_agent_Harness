@@ -192,13 +192,17 @@ Item {
   // activeModel matches the sub-provider's prefix. They never appear in
   // the default agent selector (omarchy-menu.jsonc has no entries for
   // these IDs).
-  readonly property var subProviderIds: ["kimi"]
+  readonly property var subProviderIds: ["kimi", "qwen"]
   // activeModel prefix aliases per sub-provider. Kimi is the Moonshot AI
   // platform — the API key may surface as either "kimi/" or "moonshot/"
   // depending on whether the agent uses the manual provider or the
   // official Moonshot provider.
   readonly property var subProviderPrefixes: ({
-    "kimi": ["kimi/", "moonshot/"]
+    "kimi": ["kimi/", "moonshot/"],
+    // Qwen models surface via the DashScope (Alibaba Bailian) platform.
+    // Models named "qwen/<model>" reach us via the qwen provider; older
+    // configs or direct DashScope provider entries may use "dashscope/<model>".
+    "qwen": ["qwen/", "dashscope/"]
   })
 
   // ------------------------------------------------------------- providers
@@ -280,6 +284,9 @@ Item {
       // icon clickable so the user can configure the API key via the setup
       // dialog. providerHasData still gates regular agents in enabledProviders.
       display.kimiNeedsSetup = (id === "kimi" && record.kimiAvailable !== true)
+      // Display-only policy (Josh 2026-08-31): no click-to-setup dialog for Qwen.
+      // Empty ring when key/data unavailable. User fixes their own DashScope setup.
+      display.qwenNeedsSetup = (id === "qwen" && record.qwenAvailable !== true)
       result.push(display)
     }
     return result
@@ -297,6 +304,13 @@ Item {
       // Without this, the dock filter would exclude it even when the
       // API call succeeded.
       || (p.minimaxAvailable === true && p.minimaxTokenPlan)
+      // Kimi sub-provider has no session counters either — only the
+      // connection-mode probe result. Without this, the dock filter
+      // would exclude Kimi even when the bearer-auth check succeeded.
+      || (p.kimiAvailable === true)
+      // Qwen sub-provider: same pattern as Kimi. No session/activity
+      // counters — only the Bearer-authenticated /models probe result.
+      || (p.qwenAvailable === true)
   }
 
   // A prepaid agent's credit ledger. Like rate limits, the balance is
@@ -357,6 +371,19 @@ Item {
       kimiUsageMode: String(record.kimiUsageMode || "none"),
       kimiRingEmpty: record.kimiRingEmpty === true,
       kimiAccountInfo: record.kimiAccountInfo && typeof record.kimiAccountInfo === "object" ? record.kimiAccountInfo : null,
+
+      // Qwen sub-provider data. Pass through so providerHasData() and the
+      // ring-fill logic can recognize a Qwen record as having data, and
+      // so the panel knows which ring semantic to apply (connection-mode
+      // only — no numeric quota endpoint exists on DashScope).
+      qwenAvailable: record.qwenAvailable === true,
+      qwenUsageMode: String(record.qwenUsageMode || "none"),
+      qwenRingEmpty: record.qwenRingEmpty === true,
+      qwenBaseUrl: String(record.qwenBaseUrl || ""),
+      qwenBaseUrlSource: String(record.qwenBaseUrlSource || ""),
+      qwenKeySource: String(record.qwenKeySource || ""),
+      qwenModelCount: typeof record.qwenModelCount === "number" ? record.qwenModelCount : null,
+      qwenError: String(record.qwenError || ""),
 
       todayPrompts: synced ? numberValue(stats.todayPrompts) : numberValue(record.todayPrompts),
       todaySessions: synced ? numberValue(stats.todaySessions) : numberValue(record.todaySessions),
