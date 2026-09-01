@@ -45,6 +45,12 @@ Item {
     var lines = String(output || "").split("\n")
     for (var i = 0; i < lines.length; i++) {
       var name = lines[i].trim()
+      // Skip collector internal-state files (e.g., "openclaw.state.json").
+      // These are stale-fallback caches for the collectors themselves and
+      // must not be loaded as separate panel agents — otherwise a single
+      // collector that writes both a record AND a state file (like OpenClaw)
+      // would appear twice in the dock with the same icon and ring.
+      if (name.length > 11 && name.slice(-11) === ".state.json") continue
       if (name.slice(-5) === ".json") ids.push(name.slice(0, -5))
     }
     ids.sort()
@@ -225,6 +231,11 @@ Item {
       || numberValue(p.activeDays) > 0 || numberValue(p.todayPrompts) > 0
       || numberValue(p.todaySessions) > 0 || (p.limits && p.limits.length > 0)
       || !!p.balance
+      // MiniMax has no session/activity counters — it's a usage-rate
+      // provider that only writes minimaxAvailable + minimaxTokenPlan.
+      // Without this, the dock filter would exclude it even when the
+      // API call succeeded.
+      || (p.minimaxAvailable === true && p.minimaxTokenPlan)
   }
 
   // A prepaid agent's credit ledger. Like rate limits, the balance is
