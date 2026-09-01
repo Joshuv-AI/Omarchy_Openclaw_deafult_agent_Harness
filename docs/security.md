@@ -1,11 +1,12 @@
 # Security
 
-This document describes the security model, threat surface, and explicit non-goals for OpenClaw for Omarchy. The aim is to make clear what this integration does, what it doesn't do, and what an attacker could realistically do to a user who installs it.
+This document describes the security model, threat surface, and explicit non-goals for the **OpenClaw + Hermes for Omarchy** integration. The aim is to make clear what this integration does, what it doesn't do, and what an attacker could realistically do to a user who installs it.
 
 ## Threat model
 
 A user installs this integration on their personal Omarchy machine. They trust:
 - The OpenClaw binary is legitimate.
+- The Hermes binary is legitimate (fetched via Nous Research's official installer).
 - Omarchy's Quickshell bar and panel system is legitimate.
 - The integration only displays status and provides quick-launch actions.
 
@@ -58,9 +59,9 @@ No writes occur outside these paths. `uninstall.sh` reverses everything except u
 
 The following are deliberately NOT supported by this package, and there are no plans to add them:
 
-- **Provider-specific token usage displays.** We removed the MiniMax-specific `Summary 5h` / `Summary weekly` blocks during v1.0 prep. Users who want a token-usage display for their provider should fork `targets/Panel.qml` and add their own section. The integration provides the OpenClaw-native fields (version, model, gateway, sessions, etc.); provider-specific usage is out of scope.
-- **Hermes/Codex/Claude/etc. integration.** One agent per package. We don't attempt to integrate any other agent's CLI.
-- **Background services or daemons.** The collector is invoked by Omarchy's sweeper, period. If we needed to poll more often, we still wouldn't add a daemon — that's a different architectural choice that should belong to a separate package.
+- **Provider-specific token usage displays for non-sub-provider agents.** OpenClaw's native fields (version, model, gateway, sessions) and Hermes's native fields (CLI status, gateway, uptime) are shown. Sub-providers (MiniMax/Kimi/Qwen) get token-usage displays because they have a public token-plan API. Users who want token-usage display for other agents should fork `targets/Panel.qml` and add their own section.
+- **Other agents beyond OpenClaw and Hermes.** This package ships OpenClaw + Hermes as the two centerpiece agents. Codex, Claude, Fireworks are managed by Omarchy itself. Grok / Gemini are opt-in collectors (single-purpose API key probes, no full integration). We don't attempt to integrate any other agent's full CLI surface beyond these.
+- **Background services or daemons.** The collectors are invoked by Omarchy's sweeper, period. If we needed to poll more often, we still wouldn't add a daemon — that's a different architectural choice that should belong to a separate package.
 - **Privileged operations.** No sudo tricks, no capability escalation, no setuid wrappers.
 - **API key storage or transmission.** All API key setup is delegated to `openclaw onboard`. We never read, store, or transmit API keys. `~/.openclaw/.env` is owned by OpenClaw's installer (chmod 600).
 - **Gateway control.** We display gateway state but never invoke `systemctl start/stop/restart` on the gateway. The user can do that themselves.

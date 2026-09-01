@@ -214,7 +214,11 @@ The panel reads the JSON files and renders them in three places:
 
 1. **Dock row** — one circle per enabled provider with `providerHasData() = true`
 2. **Popup hero** — `providerName`, `version`, `activeModel`
-3. **Popup status block** — provider-specific data (OpenClaw gateway/runtime/Discord/MiniMax block; other providers get the standard recentDays/limits/models block)
+3. **Popup status block** — provider-specific data:
+   - **OpenClaw** — gateway/runtime/Discord/MiniMax token plan block (gateway ring + data)
+   - **Hermes** — Hermes CLI status / gateway state / uptime block (gateway ring + data)
+   - **Sub-providers (MiniMax/Kimi/Qwen)** — token-usage bars, recentDays/limits/models block (usage ring + data)
+   - **Grok / Gemini** — rate limits + models block (connection ring + data)
 
 Detailed panel behavior is in `panel.md`.
 
