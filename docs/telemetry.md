@@ -4,30 +4,6 @@ This document describes the data each collector reads, writes, and
 displays. The aim is transparency — a user should know exactly what their
 machine is reporting to the panel.
 
-## Universal `needsSetup` field (added 2026-08-31 10:08 PM EDT)
-
-Every displayProvider() output now includes a `needsSetup` boolean
-that the panel uses to drive the empty-ring signal. The rule is
-universal: every provider gets the field, the panel short-circuits
-providerIntervalFraction() to `return 0` when `needsSetup === true`.
-
-**Per-provider semantics:**
-
-  | provider    | needsSetup=true when...                       |
-  | ----------- | --------------------------------------------- |
-  | openclaw    | gatewayState !== 'active' && ready !== true   |
-  | hermes      | gatewayState !== 'active' && ready !== true   |
-  | minimax     | minimaxAvailable !== true                     |
-  | grok        | ready !== true                                |
-  | gemini      | ready !== true                                |
-  | kimi        | kimiAvailable !== true                        |
-  | qwen        | qwenAvailable !== true                        |
-  | omarchy-core| always false (no distinct needs-setup state)  |
-
-The empty ring is the universal signal "provider detected but you
-gotta still do something before you can use it." User fixes their
-own setup; the panel never prompts.
-
 ## Data sources per collector
 
 ## Data sources per collector

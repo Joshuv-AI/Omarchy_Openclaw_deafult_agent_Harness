@@ -44,40 +44,6 @@ No writes occur outside these paths. `uninstall.sh` reverses everything except u
 
 ### Subprocess execution (no `sudo`, no remote calls)
 
-
-### Universal display-only policy (added 2026-08-31 10:08 PM EDT)
-
-Every collector in this package follows the same display-only
-contract. The agents panel:
-
-  - NEVER configures anything for the user
-  - NEVER suggests fixes for any provider
-  - NEVER troubleshoots API errors
-  - NEVER prompts the user to set keys
-
-The panel displays state. The user fixes their own setup. This
-applies to OpenClaw, Hermes, Grok, Gemini, MiniMax, Kimi, Qwen,
-and every future sub-provider.
-
-**Implementation:** `Main.qml`'s `displayProvider()` output
-includes a universal `needsSetup` boolean. `Panel.qml`'s
-`providerIntervalFraction()` short-circuits to `return 0` when
-`p.needsSetup === true`. There is no click-to-setup UI for any
-provider (the earlier Kimi click-to-setup popup was removed in `0e1ea58`).
-
-**Threat model implication:** the panel's attack surface for
-user-environment interaction is limited to:
-  - reading process env / rc files / `/proc/<pid>/environ` to
-    detect API keys
-  - making outbound Bearer-auth probes to provider endpoints
-  - writing JSON cache files to `~/.local/state/omarchy/agents/usage/`
-
-There is NO inbound shell-exec surface from the panel. The
-collector binaries are root-owned and read-only from the user's
-perspective. No collector writes env vars, modifies config
-files, or otherwise changes system state.
-
-
 ## What we NEVER do
 
 - **No sudo escalation tricks.** `install.sh` uses `sudo cp` only for the documented file paths. It does not modify `/etc/sudoers`, `/etc/polkit-1/`, or any other privilege-related config.

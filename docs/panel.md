@@ -53,62 +53,22 @@ lines are hidden until the gateway comes back.
 
 ## Display-only policy
 
-**Universal rule (Josh 2026-08-31 10:08 PM EDT):** Every provider
-that gets detected by the panel shows an icon AND a ring state that
-reflects actual data availability:
+**Universal rule (Josh 2026-08-31 9:51 PM EDT):** The agents panel
+is strictly a **display-only** surface for every provider it shows.
+It does not configure, troubleshoot, suggest fixes for, or
+otherwise intervene in any provider's setup.
 
-  - **Icon appears** when the provider is detected — the active
-    agent is enabled (for OpenClaw/Hermes) OR the activeModel
-    prefix matches a sub-provider (for MiniMax/Kimi/Qwen/etc.)
-  - **Ring is full or numeric** when the collector successfully
-    pulled token/usage data (or for OpenClaw/Hermes, when the
-    gateway is active)
-  - **Ring is empty** when the provider is detected BUT the
-    subscription/pay-per-use/access-config isn't ready. This is
-    the universal visual signal: "provider detected but you
-    gotta still do something before you can use it"
+**What this means concretely:**
+  - If a provider is detected (icon appears in dock), we pull
+    whatever data is available and display it
+  - If the data pull fails (no key, bad key, expired plan, network
+    down, agent offline), the ring is empty and we stop
+  - The user is responsible for fixing their own setup if
+    anything is wrong
 
-The empty ring applies to **every provider, no exceptions** —
-OpenClaw, Hermes, Grok, Gemini, MiniMax, Kimi, Qwen, and any
-future sub-provider. The panel does NOT prompt the user to set
-keys, troubleshoot API errors, fix network issues, or otherwise
-intervene in any provider's setup. User configures in their own
-environment.
-
-**The `needsSetup` field** (added to every displayProvider() output
-in Main.qml) is the universal data signal:
-
-  | provider    | needsSetup=true when...                        |
-  | ----------- | ---------------------------------------------- |
-  | openclaw    | gatewayState !== 'active' && ready !== true   |
-  | hermes      | gatewayState !== 'active' && ready !== true   |
-  | minimax     | minimaxAvailable !== true                     |
-  | grok        | ready !== true                                 |
-  | gemini      | ready !== true                                 |
-  | kimi        | kimiAvailable !== true                         |
-  | qwen        | qwenAvailable !== true                         |
-  | omarchy-core| always false (no distinct needs-setup state)   |
-
-Panel.qml's `providerIntervalFraction()` short-circuits to `return 0`
-when `p.needsSetup === true`, before any provider-specific branch runs.
-This guarantees the empty-ring behavior is uniform regardless of
-provider-specific data shape.
-
-**No click-to-setup dialogs anywhere.** Earlier versions of this
-package had a Kimi click-to-setup popup that opened when no API
-key was detected. That was removed in `0e1ea58` to match the
-universal display-only rule. No replacement was added — the
-empty ring is the only signal. Users configure in their own shell
-/ env files / agent settings, the panel just observes.
-
-**Per-provider collector semantics for the empty ring:**
-  - OpenClaw / Hermes: gateway stopped
-  - MiniMax / Kimi / Qwen: API key missing or auth probe failed
-  - Grok / Gemini: API key missing or account blocked
-  - omarchy-core (claude, codex, fireworks, ...): limits[] empty
-
-User fixes the upstream issue; ring fills on next collector refresh.
-
+**Applies to all providers** — OpenClaw, Hermes, Grok, Gemini,
+MiniMax, Kimi, Qwen, and any future sub-provider added. No
+exceptions.
 ## Dock color toggle
 
 Double-click anywhere on the dock row toggles the ring colors between

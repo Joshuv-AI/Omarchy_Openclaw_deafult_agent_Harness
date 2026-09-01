@@ -428,16 +428,6 @@ Panel {
     var p = providerList[idx];
     var id = String(p.providerId || "");
 
-    // Universal needsSetup short-circuit (Josh 2026-08-31 10:08 PM EDT).
-    // When the panel detects a provider (icon shows in dock) but the
-    // subscription/pay-per-use/access-config isn't ready, the ring is
-    // always empty. This is the visual signal "provider detected but
-    // you gotta still do something before you can use it" — applies
-    // to every provider, no exceptions. No click-to-setup UI, no
-    // troubleshooting, no fix prompts — user configures in their own
-    // environment.
-    if (p.needsSetup === true) return 0;
-
     // Hermes and OpenClaw have no token-usage: their ring is a connection
     // indicator. Full when the gateway is active, empty when stopped.
     if (id === "hermes" || id === "openclaw") {
@@ -489,41 +479,6 @@ Panel {
     if (id === "qwen") {
       if (p.qwenNeedsSetup === true) return 0;
       return p.qwenAvailable === true ? 1 : 0;
-    }
-
-    // Grok (xAI) — the collector writes either an authenticated
-    // limits[] (when XAI_API_KEY is valid) or empty limits (when key
-    // missing/blocked). Empty limits → empty ring. needsSetup above
-    // catches the no-key case; this branch handles the has-key-but-no-
-    // rate-limit-data edge.
-    if (id === "grok") {
-      if (Array.isArray(p.limits) && p.limits.length > 0) {
-        var maxPct = 0;
-        for (var gi = 0; gi < p.limits.length; gi++) {
-          var gl = p.limits[gi];
-          if (gl && typeof gl.percent === "number" && gl.percent > maxPct) {
-            maxPct = gl.percent;
-          }
-        }
-        return Math.max(0, Math.min(1, maxPct));
-      }
-      return 0;
-    }
-
-    // Gemini (Google) — same pattern as Grok. Collector writes limits[]
-    // when authenticated, empty limits when no key / blocked.
-    if (id === "gemini") {
-      if (Array.isArray(p.limits) && p.limits.length > 0) {
-        var gMaxPct = 0;
-        for (var gmi = 0; gmi < p.limits.length; gmi++) {
-          var gml = p.limits[gmi];
-          if (gml && typeof gml.percent === "number" && gml.percent > gMaxPct) {
-            gMaxPct = gml.percent;
-          }
-        }
-        return Math.max(0, Math.min(1, gMaxPct));
-      }
-      return 0;
     }
 
     // Omarchy-core collectors (claude, codex, fireworks, ...) write
