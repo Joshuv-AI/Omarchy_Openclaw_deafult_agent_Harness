@@ -94,6 +94,37 @@ unchanged. Total up to six providers:
 collector has written usable data — so providers without configured
 CLIs / API keys stay hidden until set up.
 
+## Multi-auth coverage per provider
+
+Each provider exposes a **single ring** in the dock, even when it has
+multiple auth surfaces or endpoint environments. Collectors write one
+JSON file per provider to `~/.local/state/omarchy/agents/usage/`;
+`providerHasData()` filters at the panel level, so additional auth
+paths share the same ring rather than spawning extra circles.
+
+| Provider | Auth paths covered | Endpoints covered |
+| --- | --- | --- |
+| OpenClaw | local daemon + various auth profiles | n/a (connection-based) |
+| Grok | OAuth (SuperGrok / X Premium) + API key | xAI |
+| Gemini | API key (`GEMINI_API_KEY` / `GOOGLE_API_KEY`) | Google |
+| **MiniMax** | **API key + OAuth portal token** | **international + China fallback** |
+| **Kimi** | **Moonshot API key + Kimi Coding** | **international, balance ≤0 USD = empty ring** |
+| **Qwen** | **Qwen Cloud + Qwen Portal OAuth + Alibaba** | **international + China fallback** |
+
+### Collector behavior notes
+
+- **MiniMax** reads `MINIMAX_API_KEY`, `MINIMAX_PORTAL_TOKEN`, and
+  `MINIMAX_PORTAL_API_KEY` in priority order. When the international
+  endpoint returns 401 / 403, the collector transparently retries
+  against the China endpoint before declaring the ring empty.
+- **Kimi** parses `available_balance` from `/v1/users/me/balance` and
+  flips the ring to its empty state when the value is ≤ 0 USD — this
+  distinguishes "no key configured" from "key present but credit
+  exhausted".
+- **Qwen** triggers its ring when model refs in the request stream
+  carry `qwen-oauth/` or `alibaba/` prefixes, covering portal-OAuth
+  and Alibaba-routed traffic in addition to direct Qwen Cloud keys.
+
 ## Dock design
 
 The dock icon area is a horizontal row of circles, one per provider:
