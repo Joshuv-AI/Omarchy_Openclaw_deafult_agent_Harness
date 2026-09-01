@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""Collect Kimi (Moonshot AI) token-usage data for the Omarchy agents panel.
+
+Kimi's public API doesn't expose a dedicated "remaining tokens" or "balance"
+endpoint like MiniMax does. This collector implements a two-stage probe:
+
+Stage 1 — Try GET /v1/users/me with Bearer auth. If the response contains
+numeric usage/balance fields, write a token-usage record (usageMode =
+"token-usage"). This is the optimistic path — if Kimi adds such fields
+later or if /v1/users/me already returns them, the collector picks them
+up automatically.
+
+Stage 2 — Fallback when /v1/users/me doesn't return usable usage data.
+A lightweight auth check via GET /v1/models succeeds only when the key
+is valid AND the account has available balance (Kimi rejects API requests
+when balance is 0 — documented in /docs/guide/account-and-payments).
+Successful response → write connection record (usageMode = "connection")
+with the ring full.
+
+Stage 3 — Local log signal. If journalctl shows recent API errors
+mentioning kimi/moonshot in the last 5 minutes, AND we're in
+connection mode, the ring empties (the agent is hitting Kimi and
+hitting failures). Token-usage mode is unaffected (real data wins over
+log noise). If journalctl is unavailable (non-systemd agent), skip
+silently.
+
+Writes:
+  ~/.local/state/omarchy/agents/usage/kimi.json
+"""
+# omarchy:summary=Print Kimi (Moonshot AI) usage as JSON
+# omarchy:args=[--force]
+# omarchy:hidden=true
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+AGENT_ID = "kimi"
+AGENT_NAME = "Kimi"
+USAGE_DIR = Path(
+    os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")
+) / "omarchy" / "agents" / "usage"
+USAGE_FILE = USAGE_DIR / f"{AGENT_ID}.json"
+ENV_FILE = Path.home() / ".openclaw" / ".env"
+API_BASE = "https://api.moonshot.ai/v1"
+API_TIMEOUT_SECONDS = 8
+LOG_LOOKBACK_MINUTES = 5
+
+
+def read_api_key() -> str:
+    """Read MOONSHOT_API_KEY from ~/.openclaw/.env. Returns '' if not set."""
+    if not ENV_FILE.exists():
+        return ""
+    try:
+        text = ENV_FILE.read_text(errors="replace")
+    except Exception:
+        return ""
+    for line in text.splitlines():
+        m = re.match(r"^\s*(?:export\s+)?MOONSHOT_API_KEY\s*=\s*(\S+)\s*$", line)
+        if m:
+            return m.group(1).strip().strip('"').strip("'")
+    return ""
+
+
+def http_get(path: str, api_key: str) -> tuple[int, dict]:
+    """GET {API_BASE}{path} with Bearer auth. Returns (status_code, parsed_json_or_empty_dict)."""
+    req = urllib.request.Request(
+        f"{API_BASE}{path}",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=API_TIMEOUT_SECONDS) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            return resp.status, json.loads(body) if body else {}
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+            return e.code, json.loads(body) if body else {}
+        except Exception:
+            return e.code, {}
+    except Exception:
+        return 0, {}
+
+
+def extract_usage_from_me(payload: dict) -> dict | None:
+    """If /v1/users/me returns numeric usage fields, return them.
+    Looks for any combination of {remaining, balance, credit, quota} +
+    percentage or absolute values. Returns None if nothing usable.
+    """
+    if not isinstance(payload, dict):
+        return None
+    # Common field names Kimi might use (zh-CN and en)
+    candidates = []
+    for key in ("remaining", "balance", "credit", "credits", "quota", "available"):
+        if key in payload:
+            val = payload[key]
+            if isinstance(val, (int, float)):
+                candidates.append((key, val))
+            elif isinstance(val, dict):
+                # nested: {"remaining": ..., "total": ...}
+                for sub_key in ("remaining", "available", "value", "amount"):
+                    sub = val.get(sub_key)
+                    if isinstance(sub, (int, float)):
+                        candidates.append((f"{key}.{sub_key}", sub))
+    if not candidates:
+        return None
+    # Pick the most likely "remaining" field
+    primary = None
+    for name, val in candidates:
+        if "remain" in name.lower() or "available" in name.lower():
+            primary = (name, val)
+            break
+    if primary is None:
+        primary = candidates[0]
+    return {"primaryField": primary[0], "primaryValue": primary[1], "allFields": candidates}
+
+
+def recent_kimi_errors() -> bool:
+    """Check journalctl for recent API errors mentioning kimi/moonshot.
+    Returns False if journalctl is unavailable (graceful default).
+    """
+    try:
+        result = subprocess.run(
+            ["journalctl", "--user", f"--since={LOG_LOOKBACK_MINUTES} minutes ago",
+             "--no-pager", "-q"],
+            capture_output=True, text=True, timeout=4,
+        )
+        out = (result.stdout or "").lower()
+        # Look for provider mention + error signal in the same line
+        for line in out.splitlines():
+            if ("kimi" in line or "moonshot" in line) and any(
+                sig in line for sig in ("error", "fail", "401", "403", "429", "5xx", "unauthorized", "rate limit")
+            ):
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def write_record(record: dict) -> None:
+    USAGE_DIR.mkdir(parents=True, exist_ok=True)
+    # Atomic write via temp file + os.replace
+    import tempfile
+    fd, tmp = tempfile.mkstemp(
+        dir=str(USAGE_FILE.parent),
+        prefix=USAGE_FILE.name + ".",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(record, indent=2))
+        os.replace(tmp, USAGE_FILE)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
+
+
+def main():
+    fetched_at = datetime.now(timezone.utc).isoformat()
+
+    base = {
+        "id": AGENT_ID,
+        "name": AGENT_NAME,
+        "schemaVersion": 1,
+        "provider": "moonshot",
+        "ready": False,
+        "installed": True,
+        "version": "",
+        "activeModel": "",
+        "kimiAvailable": False,
+        "kimiError": "",
+        "kimiUsageMode": "none",  # none | token-usage | connection
+        "kimiRingEmpty": False,
+        "kimiAccountInfo": None,
+        "kimiFetchedAt": fetched_at,
+        "authHelpText": "",
+    }
+
+    api_key = read_api_key()
+    if not api_key:
+        base["authHelpText"] = (
+            "Set MOONSHOT_API_KEY in ~/.openclaw/.env to enable Kimi token-usage data. "
+            "Click the Kimi dock icon to set it interactively."
+        )
+        write_record(base)
+        return
+
+    # Stage 1: probe /v1/users/me
+    status, payload = http_get("/users/me", api_key)
+    usage = extract_usage_from_me(payload) if status == 200 else None
+
+    if usage and status == 200:
+        # Token-usage mode
+        base["kimiUsageMode"] = "token-usage"
+        base["kimiAvailable"] = True
+        base["kimiAccountInfo"] = usage
+        base["ready"] = True
+    else:
+        # Stage 2: lightweight auth check via /v1/models
+        status2, _ = http_get("/models", api_key)
+        if status2 == 200:
+            base["kimiUsageMode"] = "connection"
+            base["kimiAvailable"] = True
+            base["ready"] = True
+        else:
+            base["kimiError"] = f"HTTP {status2} on /v1/models"
+            base["authHelpText"] = (
+                f"Kimi API returned HTTP {status2}. Check that MOONSHOT_API_KEY is valid "
+                "and the account has available balance."
+            )
+
+    # Stage 3: local log signal (only matters in connection mode)
+    if base["kimiUsageMode"] == "connection":
+        base["kimiRingEmpty"] = recent_kimi_errors()
+
+    write_record(base)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"omarchy-agent-usage-kimi: {e!r}", file=sys.stderr)
+        sys.exit(0)

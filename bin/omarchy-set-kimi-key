@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Set MOONSHOT_API_KEY in ~/.openclaw/.env atomically, then trigger collector refresh.
+# Used by Panel.qml's click-to-setup flow via IPC.
+#
+# Args:
+#   $1: API key value (required)
+#
+# Exit codes:
+#   0  — success (key written + collector refreshed)
+#   1  — missing argument
+#   2  — env file path unreadable
+#   3  — write failed
+#   4  — collector failed to refresh
+
+set -euo pipefail
+
+KEY_VALUE="${1:-}"
+if [[ -z "$KEY_VALUE" ]]; then
+  echo "usage: omarchy-set-kimi-key <MOONSHOT_API_KEY>" >&2
+  exit 1
+fi
+
+ENV_FILE="$HOME/.openclaw/.env"
+mkdir -p "$(dirname "$ENV_FILE")"
+touch "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+
+# Atomic write: temp file + mv (preserves any other env vars)
+TMP=$(mktemp "$ENV_FILE.XXXXXX")
+trap 'rm -f "$TMP"' EXIT
+
+# Preserve all lines except MOONSHOT_API_KEY (re-add at end if missing)
+awk '
+  /^[[:space:]]*(export[[:space:]]+)?MOONSHOT_API_KEY[[:space:]]*=/ { { next} }
+  { print }
+' "$ENV_FILE" > "$TMP"
+
+# Append the new key (quoted for safety)
+printf "MOONSHOT_API_KEY=%q\n" "$KEY_VALUE" >> "$TMP"
+
+if ! mv "$TMP" "$ENV_FILE"; then
+  echo "omarchy-set-kimi-key: failed to write $ENV_FILE" >&2
+  exit 3
+fi
+trap - EXIT
+
+# Trigger collector refresh
+if command -v omarchy-agent-usage-update >/dev/null 2>&1; then
+  omarchy-agent-usage-update --force >/dev/null 2>&1 || true
+fi
+
+echo "MOONSHOT_API_KEY set. Collector refreshed."
+exit 0
