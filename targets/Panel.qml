@@ -644,15 +644,12 @@ Panel {
               } else if (mouse.button === Qt.MiddleButton) {
                 root.selectProvider(root.providerIndex + 1)
               } else {
-                var provider = root.providers[index]
-                if (provider && provider.providerId === "kimi" && provider.kimiNeedsSetup === true) {
-                  kimiSetupPopup.providerId = provider.providerId
-                  kimiSetupPopup.currentHelpText = provider.authHelpText || ""
-                  kimiSetupPopup.open()
-                } else {
-                  root.selectProvider(index)
-                  root.toggle()
-                }
+                // Display-only policy (Josh 2026-08-31 10:08 PM EDT): no
+                // click-to-setup dialogs for any provider. Click always
+                // toggles the panel. Empty ring + kimiNeedsSetup/etc are
+                // pure visual signals — no UI prompts, no fix buttons.
+                root.selectProvider(index)
+                root.toggle()
               }
             }
           }
@@ -1419,109 +1416,4 @@ Panel {
   }
 
   // ---------------------------------------------------------------
-  // KimiSetupDialog — opens when user clicks the Kimi dock icon but
-  // MOONSHOT_API_KEY is missing or invalid. Lets them paste the key,
-  // saves it to ~/.openclaw/.env via the omarchy-set-kimi-key wrapper,
-  // and triggers a collector refresh.
-  // ---------------------------------------------------------------
-  Popup {
-    id: kimiSetupPopup
-    property string providerId: ""
-    property string currentHelpText: ""
-
-    modal: true
-    focus: true
-    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-    anchors.centerIn: Overlay.overlay
-    width: 440
-    padding: Style.space(16)
-
-    background: Rectangle {
-      color: "#1a1a1a"
-      radius: Style.cornerRadius
-      border.color: "#4ECDC4"  // Kimi teal — popup only opens for setup state
-      border.width: 1
-    }
-
-    Column {
-      anchors.fill: parent
-      spacing: Style.space(12)
-
-      Text {
-        text: "Set up Kimi (Moonshot AI)"
-        color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.display
-        font.bold: true
-      }
-
-      Text {
-        text: kimiSetupPopup.currentHelpText || "Enter your MOONSHOT_API_KEY to enable Kimi token-usage display."
-        color: root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        wrapMode: Text.WordWrap
-        width: parent.width
-      }
-
-      TextField {
-        id: kimiKeyField
-        width: parent.width
-        placeholderText: "MOONSHOT_API_KEY"
-        echoMode: TextInput.Password
-        color: root.foreground
-        font.family: root.fontFamily
-        selectByMouse: true
-      }
-
-      Text {
-        id: kimiSetupStatus
-        text: ""
-        color: root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-        width: parent.width
-      }
-
-      Row {
-        spacing: Style.space(8)
-        anchors.right: parent.right
-
-        Button {
-          text: "Cancel"
-          onClicked: kimiSetupPopup.close()
-        }
-
-        Button {
-          text: "Apply"
-          enabled: kimiKeyField.text.length > 0 && !kimiSetupApply.running
-          onClicked: {
-            kimiSetupStatus.text = "Saving..."
-            kimiSetupStatus.color = root.dim
-            kimiSetupApply.command = ["omarchy-set-kimi-key", kimiKeyField.text]
-            kimiSetupApply.running = true
-          }
-        }
-      }
-    }
-  }
-
-  Process {
-    id: kimiSetupApply
-    running: false
-    command: []
-
-    onExited: function(exitCode) {
-      if (exitCode === 0) {
-        kimiSetupStatus.color = "#4ECDC4"
-        kimiSetupStatus.text = "Saved. The dialog will close shortly."
-        Qt.callLater(function() { kimiSetupPopup.close() })
-      } else {
-        kimiSetupStatus.color = "#FF6B6B"
-        kimiSetupStatus.text = "Failed (exit " + exitCode + "). Check that ~/.openclaw/.env is writable."
-      }
-    }
-  }
-
 }
