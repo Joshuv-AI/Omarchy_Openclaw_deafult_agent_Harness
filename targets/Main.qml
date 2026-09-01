@@ -275,7 +275,12 @@ Item {
       }
       if (!matches) continue
       var display = displayProvider(record)
-      if (providerHasData(display)) result.push(display)
+      // Sub-providers appear in the dock whenever OpenClaw/Hermes is using
+      // them — even if the collector hasn't gotten data yet. That makes the
+      // icon clickable so the user can configure the API key via the setup
+      // dialog. providerHasData still gates regular agents in enabledProviders.
+      display.kimiNeedsSetup = (id === "kimi" && record.kimiAvailable !== true)
+      result.push(display)
     }
     return result
   }
