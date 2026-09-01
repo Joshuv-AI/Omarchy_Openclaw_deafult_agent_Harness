@@ -3,6 +3,49 @@
 Common issues and fixes. If your issue isn't here, check the cache file
 for the affected provider:
 
+
+
+## Provider ring is empty — what it means
+
+The empty ring is a **universal signal** (Josh 2026-08-31 10:08 PM EDT):
+"provider detected but you gotta still do something before you can use
+it." The panel does NOT prompt, troubleshoot, or fix. User configures
+in their own environment.
+
+**Per-provider meaning of the empty ring:**
+
+  | provider    | empty ring means...                            |
+  | ----------- | ---------------------------------------------- |
+  | openclaw    | Gateway is stopped. Run `omarchy start`.       |
+  | hermes      | Gateway is stopped. Run `omarchy-setup-hermes`.|
+  | minimax     | No `MINIMAX_API_KEY` set OR token-plan fetch    |
+  |             | failed. Set the key in any of the 5 locations.  |
+  | grok        | No `XAI_API_KEY` set OR account blocked. Check |
+  |             | console.x.ai.                                   |
+  | gemini      | No `GEMINI_API_KEY` set OR account blocked.     |
+  |             | Check console.cloud.google.com.                 |
+  | kimi        | No `MOONSHOT_API_KEY` set OR probe failed.     |
+  |             | Check the key.                                  |
+  | qwen        | No `DASHSCOPE_API_KEY` set OR `/v1/models`      |
+  |             | probe failed. Check the key + region.           |
+
+**Fix each one in the user's own setup, not the panel.** The panel
+just observes. After the user fixes the upstream issue, the ring fills
+on the next collector refresh (~60s).
+
+**The panel will NOT:**
+  - Open a setup dialog prompting you to paste your API key
+  - Show a "fix it" button or troubleshooting URL
+  - Tell you to check your provider's console
+  - Suggest any configuration change
+  - Auto-configure anything for you
+
+**The panel WILL:**
+  - Show the icon when the provider is detected
+  - Show the empty ring when data isn't pullable
+  - Show the filled ring (full or numeric %) when data IS pullable
+  - Stop. The user takes it from there.
+
 ```bash
 ls -la ~/.local/state/omarchy/agents/usage/
 cat ~/.local/state/omarchy/agents/usage/openclaw.json | python3 -m json.tool | head -20
@@ -59,45 +102,6 @@ dock.
    grep -A 20 "subProviderPrefixes" /usr/share/omarchy/shell/plugins/agents/Main.qml
    ```
 
-## Kimi dialog doesn't open when I click the empty-ring icon
-
-**Symptom:** Clicking the Kimi icon (empty teal ring) does nothing.
-
-**Causes / fixes:**
-
-1. **Panel.qml dialog code not loaded.**
-   Verify `KimiSetupDialog` is present:
-   ```bash
-   grep -c "KimiSetupDialog" /usr/share/omarchy/shell/plugins/agents/Panel.qml
-   ```
-   Should be ≥ 1. If 0, reinstall or pull the latest Panel.qml.
-
-2. **Quickshell didn't reload the QML.**
-   Kill and restart Quickshell:
-   ```bash
-   pkill -TERM -f "quickshell -n -p"
-   sleep 4
-   nohup quickshell -n -p >/tmp/quickshell.log 2>&1 &
-   disown
-   ```
-   Wait ~5 seconds for the panel to come back. Check journal:
-   ```bash
-   journalctl --user --since "30 seconds ago" | grep -i "kimi|popup|qml"
-   ```
-
-3. **`kimiNeedsSetup` flag isn't being set.**
-   Check the cache file:
-   ```bash
-   cat ~/.local/state/omarchy/agents/usage/kimi.json | python3 -c "import json,sys; d=json.load(sys.stdin); print('kimiAvailable:', d.get('kimiAvailable'))"
-   ```
-   If `kimiAvailable: true`, the click will toggle the panel (no
-   dialog) — that's correct behavior, the key IS configured.
-
-4. **QML errors in journal.**
-   ```bash
-   journalctl --user --since "1 min ago" | grep -iE "kimi|popup|cannot"
-   ```
-   Look for syntax errors or undefined references.
 
 ## Kimi ring shows full but Kimi API calls fail
 

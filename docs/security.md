@@ -28,7 +28,7 @@ The attacker might attempt to:
 | `/usr/bin/omarchy-agent-usage-minimax` | root | 755 (only installed; active when MINIMAX_API_KEY set) |
 | `/usr/bin/omarchy-agent-usage-kimi` | root | 755 (only installed; auto-appears when OpenClaw/Hermes uses kimi/* model) |
 | `/usr/bin/omarchy-agent-usage-qwen` | root | 755 (only installed; auto-appears when OpenClaw/Hermes uses qwen/* or dashscope/* model — display-only, no setup UI) |
-| `/usr/bin/omarchy-set-kimi-key` | root | 755 (wrapper called from Panel.qml's KimiSetupDialog — writes ~/.openclaw/.env atomically via os.replace) |
+| `/usr/bin/omarchy-set-kimi-key` | root | 755 (shell-only key-update wrapper for users who want to set MOONSHOT_API_KEY from a script — no panel surface, the panel does not prompt; writes ~/.openclaw/.env atomically via os.replace) |
 | `/usr/share/omarchy/shell/plugins/agents/Panel.qml` | root | 644 (overwritten; original backed up as `.openclaw-backup`) |
 | `/usr/share/omarchy/shell/plugins/agents/Panel.qml` | root | 644 (overwritten; original backed up as `.openclaw-backup`) |
 | `/usr/share/omarchy/shell/plugins/agents/Main.qml` | root | 644 (overwritten; original backed up as `.openclaw-backup`) |
@@ -44,72 +44,39 @@ No writes occur outside these paths. `uninstall.sh` reverses everything except u
 
 ### Subprocess execution (no `sudo`, no remote calls)
 
-### KimiSetupDialog click-to-setup
 
-`KimiSetupDialog` (Panel.qml) lets the user paste `MOONSHOT_API_KEY`
-into a `TextField` and apply it without touching a terminal. The
-key is NEVER persisted in QML state, NEVER logged, and NEVER echoed
-back to the UI (`TextInput.Password` echo mode).
+### Universal display-only policy (added 2026-08-31 10:08 PM EDT)
 
-The dialog calls `/usr/bin/omarchy-set-kimi-key <key>` via Quickshell's
-`Process` component. The wrapper:
+Every collector in this package follows the same display-only
+contract. The agents panel:
 
-- Receives the key as `$1`
-- Writes/updates `~/.openclaw/.env` atomically (write to `.env.tmp`,
-  then `os.replace()`) — readers never see a partial file
-- Runs `omarchy-agent-usage-update --force` to refresh the collector
-- Returns exit 0 on success / non-zero on write failure
-- The key value is NEVER printed to stdout/stderr by the wrapper
-- The key value is NEVER included in the QML status text
+  - NEVER configures anything for the user
+  - NEVER suggests fixes for any provider
+  - NEVER troubleshoots API errors
+  - NEVER prompts the user to set keys
 
-**What this means if Panel.qml is compromised:** an attacker with
-write access to Panel.qml can substitute `command: [...]` to read
-the user's key (via `cat ~/.openclaw/.env`) before/after the
-wrapper runs. Mitigation: Panel.qml is root-owned and read-only
-from the user's perspective; users who install this package trust
-the QML surface the same way they trust any other panel component.
-This is consistent with how every other panel click handler
-already works (e.g. agent launchers in `omarchy-menu.jsonc`).
+The panel displays state. The user fixes their own setup. This
+applies to OpenClaw, Hermes, Grok, Gemini, MiniMax, Kimi, Qwen,
+and every future sub-provider.
 
-### Qwen collector (display-only)
+**Implementation:** `Main.qml`'s `displayProvider()` output
+includes a universal `needsSetup` boolean. `Panel.qml`'s
+`providerIntervalFraction()` short-circuits to `return 0` when
+`p.needsSetup === true`. There is no click-to-setup UI for any
+provider (the earlier Kimi click-to-setup popup was removed in `0e1ea58`).
 
-The Qwen sub-provider collector
-(`omarchy-agent-usage-qwen`) is strictly display-only:
+**Threat model implication:** the panel's attack surface for
+user-environment interaction is limited to:
+  - reading process env / rc files / `/proc/<pid>/environ` to
+    detect API keys
+  - making outbound Bearer-auth probes to provider endpoints
+  - writing JSON cache files to `~/.local/state/omarchy/agents/usage/`
 
-- Reads `DASHSCOPE_API_KEY` + `QWEN_BASE_URL` from the user's
-  environment (no writes back)
-- Performs a single authenticated `GET /models` Bearer probe to
-  DashScope to determine ring state
-- Writes its result JSON to
-  `~/.local/state/omarchy/agents/usage/qwen.json` — no other
-  filesystem writes
-- Never writes `authHelpText` with troubleshooting instructions
-  (the field is always empty per display-only policy)
-- Has no click-to-setup dialog, no fix-prompt UI, no setup
-  workflow
+There is NO inbound shell-exec surface from the panel. The
+collector binaries are root-owned and read-only from the user's
+perspective. No collector writes env vars, modifies config
+files, or otherwise changes system state.
 
-**Threat surface:** same as any other read-only collector. An
-attacker with write access to `bin/omarchy-agent-usage-qwen`
-can substitute the probe endpoint to leak the key (e.g. POST to
-their own server). Mitigation: the collector is root-owned and
-read-only from the user's perspective; users who install this
-package trust the collector binary the same way they trust
-every other collector shipped here.
-
-### KimiSetupDialog (Panel.qml, popup)
-
-
-The collector runs these commands (read-only or user-scope):
-
-- `openclaw --version` — get CLI version string.
-- `openclaw onboard` — interactive API key setup, only invoked by user consent (skipped if `~/.openclaw/.env` exists).
-- `systemctl --user is-active openclaw-gateway.service` — gateway state check.
-- `systemctl --user show openclaw-gateway.service --property=...` — gateway start timestamp.
-- `node --version` — Node.js runtime version.
-- `pgrep -f openclaw` — find OpenClaw gateway PID.
-- `pgrep -f discord` — find Discord process.
-
-No `sudo` is invoked by the collector itself. No network calls are made by the collector (the curl call to the MiniMax API was removed in v1.0 — see "Non-goals" below).
 
 ## What we NEVER do
 

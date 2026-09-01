@@ -43,7 +43,7 @@ openclaw-integration/
 │   ├── omarchy-agent-usage-kimi
 │   │                          Collector for Kimi (Moonshot AI) — two-stage probe: /v1/users/me for token-usage, /v1/models for connection fallback
 │   ├── omarchy-set-kimi-key
-│   │                          Key-update wrapper for KimiSetupDialog click-to-setup UX (writes ~/.openclaw/.env atomically)
+│   │                          Shell-only key-update wrapper for users who want to set MOONSHOT_API_KEY from a script (no panel surface — panel does NOT prompt)
 │   ├── omarchy-agent-usage-qwen
 │   │                          Collector for Qwen (Alibaba DashScope) — single Bearer-auth /models probe; auto-detects DASHSCOPE_API_KEY + QWEN_BASE_URL from 5 locations
 │   └── (no Qwen setup wrapper — display-only policy)
