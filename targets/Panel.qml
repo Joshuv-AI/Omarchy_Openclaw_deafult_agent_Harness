@@ -382,6 +382,7 @@ Panel {
       "hermes": "#D4AF37",
       "minimax": "#FF0000",
       "kimi": "#4ECDC4",
+      "qwen": "#8B5CF6",
       "copilot": "#6e40c9",
       "crush": "#ec4899",
       "omp": "#6b7280",
@@ -467,6 +468,17 @@ Panel {
         return p.kimiRingEmpty === true ? 0 : 1;
       }
       return 0;
+    }
+
+    // Qwen (DashScope / Bailian) has no public remaining-token endpoint —
+    // quotas are dynamic monthly tiers documented only at console level. The
+    // collector performs a single authenticated GET /models probe. Full ring
+    // when the probe succeeded (qwenAvailable true), empty ring otherwise.
+    // Display-only policy (Josh 2026-08-31): no click-to-setup UI, no
+    // troubleshooting — the user fixes their own DashScope configuration.
+    if (id === "qwen") {
+      if (p.qwenNeedsSetup === true) return 0;
+      return p.qwenAvailable === true ? 1 : 0;
     }
 
     // Omarchy-core collectors (claude, codex, fireworks, ...) write
