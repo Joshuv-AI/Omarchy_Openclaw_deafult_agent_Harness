@@ -936,6 +936,7 @@ Panel {
             readonly property var days: root.provider ? (root.provider.recentDays || []) : []
             readonly property real peak: Math.max(1, root.weekPeak(root.provider))
             readonly property bool isOpenClaw: root.provider ? (root.provider.providerId === "openclaw") : false
+    readonly property bool isHermes: root.provider ? (root.provider.providerId === "hermes") : false
     readonly property bool isMiniMax: root.provider ? (root.provider.providerId === "minimax") : false
 
             // ---- OpenClaw custom lines (single-line ternaries, no JS blocks) ----
@@ -1132,6 +1133,65 @@ Panel {
             }
 
           }
+            // ---- Hermes custom lines (gateway state + CLI status + uptime + PID) ----
+            Text {
+              visible: usageSection.isHermes && root.provider && root.provider.gatewayState === "active"
+              width: parent.width
+              text: "● Hermes gateway active"
+              color: "#D4AF37"
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              font.bold: true
+            }
+            Text {
+              visible: usageSection.isHermes && root.provider && root.provider.gatewayState === "stopped"
+              width: parent.width
+              text: "○ Hermes gateway stopped — run: hermes gateway"
+              color: "#d29922"
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+            }
+            Text {
+              visible: usageSection.isHermes && root.provider && root.provider.gatewayState !== "active" && root.provider.gatewayState !== "stopped"
+              width: parent.width
+              text: "○ Hermes gateway unknown (not installed?)"
+              color: "#f85149"
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+            }
+            Text {
+              visible: usageSection.isHermes && root.provider && root.provider.installed === false
+              width: parent.width
+              text: "Hermes not installed — curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+            Text {
+              visible: usageSection.isHermes && root.provider
+              width: parent.width
+              text: root.provider ? ("Version: " + (root.provider.version || "—")) : ""
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+            Text {
+              visible: usageSection.isHermes && root.provider && root.provider.hermesUptime
+              width: parent.width
+              text: root.provider ? ("Gateway uptime: " + root.provider.hermesUptime) : ""
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+            Text {
+              visible: usageSection.isHermes && root.provider && root.provider.hermesPid
+              width: parent.width
+              text: root.provider ? ("Hermes PID: " + root.provider.hermesPid) : ""
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
 
           // ---------- Models ----------
           PanelSeparator {
