@@ -198,10 +198,17 @@ Item {
   // depending on whether the agent uses the manual provider or the
   // official Moonshot provider.
   readonly property var subProviderPrefixes: ({
-    "kimi": ["kimi/", "moonshot/"],
+    // Kimi models can surface as "kimi/..." (Kimi Coding), "moonshot/..."
+    // (Moonshot Open Platform — the underlying platform for the Kimi API),
+    // or "kimi-coding/..." (the dedicated Kimi Coding model refs).
+    // All three share the same Kimi/Moonshot auth + the same single ring.
+    "kimi": ["kimi/", "moonshot/", "kimi-coding/"],
     // Qwen models surface via the DashScope (Alibaba Bailian) platform.
     // Models named "qwen/<model>" reach us via the qwen provider; older
     // configs or direct DashScope provider entries may use "dashscope/<model>".
+    // Qwen Portal OAuth tokens use "qwen-oauth/<model>". The Alibaba plugin
+    // for Wan video models registers as "alibaba/<model>" — distinct auth
+    // surface but same DashScope key chain.
     "qwen": ["qwen/", "dashscope/"]
   })
 
