@@ -18,7 +18,7 @@ Panel {
   readonly property color track: Style.selectedFillFor(foreground, Color.accent)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
-  readonly property var providers: usage.enabledProviders
+  readonly property var providers: usage.enabledProviders.concat(usage.subProviders || [])
   // The selection follows the provider, not the slot it happens to sit in: a
   // provider whose first scan lands while the panel is open would otherwise
   // shift the list underneath you and swap out what you were reading.
@@ -381,6 +381,7 @@ Panel {
       "fireworks": "#FF6B35",
       "hermes": "#D4AF37",
       "minimax": "#FF0000",
+      "kimi": "#4ECDC4",
       "copilot": "#6e40c9",
       "crush": "#ec4899",
       "omp": "#6b7280",
@@ -439,6 +440,30 @@ Panel {
           && typeof p.minimaxTokenPlan.general.intervalRemainingPct === "number") {
         return Math.max(0, Math.min(1,
           1 - p.minimaxTokenPlan.general.intervalRemainingPct / 100));
+      }
+      return 0;
+    }
+
+    // Kimi has no public token-usage endpoint. The collector writes one of
+    // two modes: 'token-usage' (if /v1/users/me returned numeric data) or
+    // 'connection' (fallback: any authenticated request succeeds means key
+    // is valid + account has balance). In connection mode the ring fills
+    // full unless kimiRingEmpty is set (which the collector derives from
+    // recent journalctl error lines mentioning kimi/moonshot).
+    if (id === "kimi") {
+      var mode = p.kimiUsageMode || "none";
+      if (mode === "token-usage") {
+        // Use the primary numeric field from /v1/users/me. The collector
+        // writes kimiAccountInfo.primaryValue as a 0-100 number; treat it
+        // as a used-percentage (consistent with MiniMax semantics).
+        var info = p.kimiAccountInfo;
+        if (info && typeof info.primaryValue === "number" && isFinite(info.primaryValue)) {
+          return Math.max(0, Math.min(1, info.primaryValue / 100));
+        }
+        return 0;
+      }
+      if (mode === "connection") {
+        return p.kimiRingEmpty === true ? 0 : 1;
       }
       return 0;
     }
