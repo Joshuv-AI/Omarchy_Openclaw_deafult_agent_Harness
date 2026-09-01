@@ -129,7 +129,7 @@ echo "[3/8] Collector scripts..."
 # All three collectors ship in this package. openclaw is always installed.
 # grok and gemini activate only when the corresponding API key env var is set,
 # but the binaries are installed regardless so a fresh user can set keys later.
-for collector in omarchy-agent-usage-openclaw omarchy-agent-usage-grok omarchy-agent-usage-gemini omarchy-agent-usage-hermes omarchy-agent-usage-minimax omarchy-agent-usage-kimi; do
+for collector in omarchy-agent-usage-openclaw omarchy-agent-usage-grok omarchy-agent-usage-gemini omarchy-agent-usage-hermes omarchy-agent-usage-minimax omarchy-agent-usage-kimi omarchy-agent-usage-qwen; do
     src="$SCRIPT_DIR/bin/$collector"
     dst="/usr/bin/$collector"
     if [ ! -f "$src" ]; then
@@ -151,7 +151,7 @@ echo
 echo "[4/8] SVG assets..."
 # All 8 provider icons. The dock renders the center icon greied and the ring
 # in the provider's brand color, so all icons use a uniform greied fill here.
-for svg in claude.svg codex.svg codex-light.svg fireworks.svg grok.svg gemini.svg hermes.svg minimax.svg openclaw.svg openclaw-light.svg kimi.svg; do
+for svg in claude.svg codex.svg codex-light.svg fireworks.svg grok.svg gemini.svg hermes.svg minimax.svg openclaw.svg openclaw-light.svg kimi.svg qwen.svg; do
     if [ -f "$ASSET_DST_DIR/$svg" ] && cmp -s "$ASSET_SRC_DIR/$svg" "$ASSET_DST_DIR/$svg"; then
         echo "    $svg: already current."
     else

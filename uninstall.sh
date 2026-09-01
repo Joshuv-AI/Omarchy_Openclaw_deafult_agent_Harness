@@ -38,7 +38,7 @@ done
 # --- 2. Remove collectors ---
 echo
 echo "[2/5] Removing collectors..."
-for collector in omarchy-agent-usage-openclaw omarchy-agent-usage-grok omarchy-agent-usage-gemini omarchy-agent-usage-hermes omarchy-agent-usage-minimax omarchy-agent-usage-kimi omarchy-setup-hermes omarchy-set-kimi-key; do
+for collector in omarchy-agent-usage-openclaw omarchy-agent-usage-grok omarchy-agent-usage-gemini omarchy-agent-usage-hermes omarchy-agent-usage-minimax omarchy-agent-usage-kimi omarchy-agent-usage-qwen omarchy-setup-hermes omarchy-set-kimi-key; do
     dst="/usr/bin/$collector"
     if [ -f "$dst" ]; then
         sudo rm -f "$dst"
@@ -53,7 +53,7 @@ echo "[3/5] Removing SVG assets..."
 # codex-light / fireworks) originally came from Omarchy base — even if we
 # overwrote them with greied versions during install, leave them rather than
 # risk removing Omarchy's icons.
-for svg in openclaw.svg openclaw-light.svg grok.svg gemini.svg hermes.svg minimax.svg kimi.svg; do
+for svg in openclaw.svg openclaw-light.svg grok.svg gemini.svg hermes.svg minimax.svg kimi.svg qwen.svg; do
     if [ -f "$ASSET_DST_DIR/$svg" ]; then
         sudo rm -f "$ASSET_DST_DIR/$svg"
         echo "    Removed $svg"

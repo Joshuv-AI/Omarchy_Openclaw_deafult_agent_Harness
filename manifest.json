@@ -1,8 +1,8 @@
 {
   "name": "openclaw-integration",
-  "displayName": "OpenClaw + Hermes + MiniMax + Kimi for for omArchy",
-  "version": "2.3.0",
-  "description": "Installs OpenClaw and Hermes plus optional optional (Grok,ogk, Gemini) and integrates them into Omarchy's agents panel as a multi-provider dock with brand-colored progress rings. Adds an OpenClaw tab showing gateway state, version, active model, runtime, Discord status, total sessions. Adds a Hermes tab with a mirrored display (gateway/runtime/model/etc.) minus token-usage. Adds a MiniMax tab for token-usage data (5h + weekly bars) — split out of the OpenClaw record so the model data lives with the model, not the agent. Adds a Kimi sub-provider tab — appears in the dock only when OpenClaw/Hermes is using a kimi/* model; click-to-setup dialog for users without MOONSHOT_API_KEY configured. Registers lobster OpenClaw + wing Hermes entries in the the super space agents submenu. Optionally sets OpenClaw as the default agent.",
+  "displayName": "OpenClaw + Hermes + MiniMax + Kimi + Qwen for omArchy",
+  "version": "2.4.0",
+  "description": "Installs OpenClaw and Hermes plus optional collectors (Grok, Gemini) and integrates them into Omarchy's agents panel as a multi-provider dock with brand-colored progress rings. Adds an OpenClaw tab showing gateway state, version, active model, runtime, Discord status, total sessions. Adds a Hermes tab with a mirrored display (gateway/runtime/model/etc.) minus token-usage. Adds a MiniMax tab for token-usage data (5h + weekly bars) — split out of the OpenClaw record so the model data lives with the model, not the agent. Adds a Kimi sub-provider tab (auto-detects MOONSHOT_API_KEY from 5 locations; appears in dock only when OpenClaw/Hermes uses kimi/* model; click-to-setup dialog if no key found). Adds a Qwen sub-provider tab (auto-detects DASHSCOPE_API_KEY + QWEN_BASE_URL from 5 locations; appears in dock only when OpenClaw/Hermes uses qwen/* or dashscope/* model; purple ring; display-only — no setup UI). Registers lobster OpenClaw + wing Hermes entries in the super-space agents submenu. Optionally sets OpenClaw as the default agent.",
   "author": {
     "name": "OpenClaw for Omarchy contributors"
   },
@@ -244,6 +244,38 @@
         "cacheFile": "~/.local/state/omarchy/agents/usage/kimi.json",
         "refreshSeconds": 60,
         "networkCalls": "GET https://api.moonshot.ai/v1/users/me (Bearer auth) — token-usage probe; GET https://api.moonshot.ai/v1/models — connection fallback when /users/me doesn't return numeric usage data"
+      },
+      {
+        "path": "bin/omarchy-agent-usage-qwen",
+        "installPath": "/usr/bin/omarchy-agent-usage-qwen",
+        "agentId": "qwen",
+        "agentName": "Qwen (DashScope)",
+        "interface": "omarchy-agent-usage",
+        "category": "model-provider",
+        "activeByDefault": false,
+        "activation": "DASHSCOPE_API_KEY auto-detected from up to 5 locations (process env, ~/.openclaw/.env, shell rc, /proc/<pid>/environ of running OpenClaw/Hermes, systemd EnvironmentFile). QWEN_BASE_URL optional, defaults to https://dashscope-intl.aliyuncs.com/compatible-mode/v1 (international). China-mainland users set QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1.",
+        "outputSchema": {
+          "id": "string",
+          "name": "string",
+          "schemaVersion": "number",
+          "provider": "string",
+          "ready": "boolean",
+          "installed": "boolean",
+          "version": "string",
+          "fetchedAt": "string",
+          "qwenAvailable": "boolean",
+          "qwenUsageMode": "string (connection | none)",
+          "qwenRingEmpty": "boolean",
+          "qwenBaseUrl": "string",
+          "qwenBaseUrlSource": "string (process-env | openclaw-env | shell-rc | proc-environ | systemd-envfile | default)",
+          "qwenKeySource": "string (same enum, plus 'missing')",
+          "qwenModelCount": "number | null",
+          "qwenError": "string | null",
+          "authHelpText": "string (always empty per display-only policy)"
+        },
+        "cacheFile": "~/.local/state/omarchy/agents/usage/qwen.json",
+        "refreshSeconds": 60,
+        "networkCalls": "GET ${QWEN_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}/models (Bearer auth) — single authenticated connection probe. No numeric quota API exists on DashScope; only dynamic monthly tier-based TPM documented at console level."
       }
     ],
     "panelPatch": {
@@ -309,6 +341,11 @@
         "purpose": "Kimi brand mark (greied, base64-embedded PNG)"
       },
       {
+        "path": "assets/qwen.svg",
+        "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/qwen.svg",
+        "purpose": "Qwen brand mark (pre-greyscaled, base64-embedded PNG inside SVG wrapper)"
+      },
+      {
         "path": "assets/openclaw.svg",
         "installPath": "/usr/share/omarchy/shell/plugins/agents/assets/openclaw.svg",
         "purpose": "Lobster emoji with grayscale filter"
@@ -363,7 +400,10 @@
         "/usr/bin/omarchy-agent-usage-kimi",
         "/usr/bin/omarchy-set-kimi-key",
         "/usr/share/omarchy/shell/plugins/agents/assets/kimi.svg",
-        "~/.local/state/omarchy/agents/usage/kimi.json"
+        "~/.local/state/omarchy/agents/usage/kimi.json",
+        "/usr/bin/omarchy-agent-usage-qwen",
+        "/usr/share/omarchy/shell/plugins/agents/assets/qwen.svg",
+        "~/.local/state/omarchy/agents/usage/qwen.json"
       ],
       "sudo": "yes (for /usr/bin/ and /usr/share/omarchy/ paths only)",
       "notes": "No writes outside the paths listed. uninstall.sh restores system files from .openclaw-backup created at install time."
