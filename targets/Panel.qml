@@ -501,6 +501,16 @@ Panel {
       return Math.max(0, Math.min(1, 1 - p.balance.remaining / p.balance.funded));
     }
 
+    // No limits + no balance, but recent usage activity → make the ring visible.
+    // Common case: codex CLI not authenticated (limits unavailable), but ChatGPT
+    // app shares OpenAI auth, so the session data is real.
+    if (Number(p.todayTotalTokens || 0) > 0 || Number(p.todayPrompts || 0) > 0) {
+      var totalToday = Number(p.todayTotalTokens || 0)
+      // Logarithmic-ish scale: 1K→5%, 10K→15%, 100K→30%, 1M→50%, 10M→70%
+      var visible = totalToday > 0 ? Math.min(0.7, 0.05 + Math.log10(totalToday / 1000 + 1) * 0.15) : 0.1
+      return Math.max(0.1, visible)
+    }
+
     // No token-usage data, no balance: ring stays empty.
     return 0;
   }
@@ -809,7 +819,7 @@ Panel {
 
           // ---------- Status ----------
           BorderSurface {
-            visible: !!root.provider && String(root.provider.authHelpText || "") !== ""
+            visible: !!root.provider && String(root.provider.authHelpText || "") !== "" && Number(root.provider.todayTotalTokens || 0) === 0
             width: parent.width
             implicitHeight: statusText.implicitHeight + Style.spacing.xl * 2
             color: root.alpha(root.urgent, 0.10)
@@ -823,7 +833,7 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
               anchors.leftMargin: Style.space(12)
               anchors.rightMargin: Style.space(12)
-              text: root.provider ? String(root.provider.authHelpText || "") : ""
+              text: (root.provider && String(root.provider.authHelpText || "") !== "" && Number(root.provider.todayTotalTokens || 0) === 0) ? String(root.provider.authHelpText || "") : ""
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
