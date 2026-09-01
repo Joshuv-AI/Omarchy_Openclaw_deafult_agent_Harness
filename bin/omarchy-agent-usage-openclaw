@@ -39,6 +39,24 @@ SAFE_IO_PATH = Path(__file__).resolve().parent / "omarchy-safe-io"
 USAGE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "omarchy" / "agents" / "usage"
 USAGE_FILE = USAGE_DIR / f"{AGENT_ID}.json"
 STATE_FILE = USAGE_DIR / f"{AGENT_ID}.state.json"
+
+# MiniMax fields used to live in the OpenClaw record before token-usage was
+# split into its own provider. If stale data from that era is still on disk
+# (in either USAGE_FILE or STATE_FILE), strip it on read so it can never
+# leak back into the OpenClaw record via the **base spread below.
+MINIMAX_KEYS_TO_STRIP = (
+    "minimaxAvailable", "minimaxError", "minimaxTokenPlan",
+    "minimaxSummary5h", "minimaxSummaryWeekly", "minimaxSummaryReset",
+    "minimaxFetchedAt",
+)
+
+
+def _strip_minimax(d: dict) -> dict:
+    if not isinstance(d, dict):
+        return d
+    for k in MINIMAX_KEYS_TO_STRIP:
+        d.pop(k, None)
+    return d
 TRAJECTORY_DIR = Path.home() / ".openclaw" / "crestodian" / "sessions"
 DEVICE_FILE = Path.home() / ".openclaw" / "identity" / "device.json"
 LAST_SESSION_FILE = Path.home() / ".openclaw" / "tui" / "last-session.json"
@@ -47,6 +65,31 @@ SCAN_LIMIT_BYTES = 16 * 1024 * 1024  # per file (was 262144; bumped so 1MB+ traj
 SCAN_TOTAL_LIMIT_BYTES = 8 * 1024 * 1024  # aggregate cap across all trajectory files
 SUBPROCESS_TIMEOUT_SECONDS = 5
 SUBPROCESS_OUTPUT_LIMIT = 4096
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    """Write content to path atomically via temp file + os.replace.
+
+    Avoids the panel reading a partial / mid-write file and getting a
+    JSON parse error. The temp file is created in the same directory so
+    os.replace is atomic on the same filesystem.
+    """
+    import tempfile
+    fd, tmp = tempfile.mkstemp(
+        dir=str(path.parent),
+        prefix=path.name + ".",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
 
 
 def _humanize_seconds(total_seconds) -> str:
@@ -551,7 +594,7 @@ def build_record(force: bool, limits_only: bool) -> dict:
         # known-good record from the state file instead of zeros.
         if STATE_FILE.exists():
             try:
-                stale = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+                stale = _strip_minimax(json.loads(STATE_FILE.read_text(encoding="utf-8")))
                 if isinstance(stale, dict) and stale.get("id"):
                     stale["staleFallback"] = True
                     stale["staleReason"] = f"{type(exc).__name__}: {exc}"
@@ -655,7 +698,7 @@ def _build_record_inner(force: bool, limits_only: bool, base: dict) -> dict:
 
     # Save successful record to state file for stale-data-fallback on next failure.
     try:
-        STATE_FILE.write_text(json.dumps(record), encoding="utf-8")
+        _atomic_write_text(STATE_FILE, json.dumps(record))
     except Exception:
         pass
 
@@ -677,7 +720,7 @@ def main() -> int:
     # at the end of the run.)
     try:
         USAGE_DIR.mkdir(parents=True, exist_ok=True)
-        STATE_FILE.write_text(json.dumps(record), encoding="utf-8")
+        _atomic_write_text(STATE_FILE, json.dumps(record))
     except Exception:
         pass
     return 0

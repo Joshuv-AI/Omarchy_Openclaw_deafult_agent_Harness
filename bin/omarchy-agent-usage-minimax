@@ -68,16 +68,87 @@ def fetch_token_plan(api_key):
         return json.loads(body) if body else {}
 
 
-def normalize_plan(raw):
-    """Pick the `general` and `video` plans out of the response, in the
-    shape Panel.qml's mmIntervalFraction / mmWeeklyFraction expect.
+def _humanize_seconds(value):
+    """Convert a duration to a compact 'Xh Ym' / 'Xd Yh' string.
+
+    MiniMax's API returns `remains_time` and `weekly_remains_time` in
+    MILLISECONDS despite the field names not having a `_ms` suffix
+    (values around 1.7e7 for a 5h window, 5.2e8 for a weekly window).
+    Auto-detect: anything larger than 7 days in seconds (604800) is
+    almost certainly ms, not s — 7 days in ms would mean 7 days in 7
+    days, which is nonsense for a "remaining" duration.
     """
-    general = raw.get("general") if isinstance(raw, dict) else None
-    video = raw.get("video") if isinstance(raw, dict) else None
-    return {
-        "general": general if isinstance(general, dict) else None,
-        "video": video if isinstance(video, dict) else None,
-    }
+    try:
+        s = int(value)
+    except Exception:
+        return ""
+    if s <= 0:
+        return ""
+    if s > 604800:  # bigger than 7 days in seconds → treat as ms
+        s = s // 1000
+    if s <= 0:
+        return ""
+    days, rem = divmod(s, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    if days > 0:
+        return f"{days}d {hours}h"
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    if minutes > 0:
+        return f"{minutes}m"
+    return f"{s}s"
+
+
+def normalize_plan(raw):
+    """Parse MiniMax /v1/token_plan/remains into Panel.qml's expected shape.
+
+    Real API response:
+      {"model_remains": [{"model_name": "general"|"video",
+                         "current_interval_remaining_percent": 96,
+                         "current_weekly_remaining_percent": 100,
+                         "remains_time": 17576917,
+                         "weekly_remains_time": 517976917, ...}],
+       "base_resp": {"status_code": 0, ...}}
+
+    Panel.qml expects:
+      provider.minimaxTokenPlan.general.intervalRemainingPct  (0..100 number)
+      provider.minimaxTokenPlan.general.weeklyRemainingPct   (0..100 number)
+      provider.minimaxTokenPlan.general.intervalResetHuman   ("3h 15m")
+      provider.minimaxTokenPlan.general.weeklyResetHuman     ("5d 12h")
+      provider.minimaxTokenPlan.video.*                      (same shape)
+    """
+    out = {"general": None, "video": None}
+    if not isinstance(raw, dict):
+        return out
+    items = raw.get("model_remains")
+    if not isinstance(items, list):
+        return out
+    for entry in items:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("model_name") or "").strip()
+        if name not in ("general", "video"):
+            continue
+        interval_pct = entry.get("current_interval_remaining_percent")
+        weekly_pct = entry.get("current_weekly_remaining_percent")
+        try:
+            interval_pct = float(interval_pct) if interval_pct is not None else None
+        except Exception:
+            interval_pct = None
+        try:
+            weekly_pct = float(weekly_pct) if weekly_pct is not None else None
+        except Exception:
+            weekly_pct = None
+        out[name] = {
+            "intervalRemainingPct": interval_pct,
+            "weeklyRemainingPct": weekly_pct,
+            "intervalResetHuman": _humanize_seconds(entry.get("remains_time")),
+            "weeklyResetHuman": _humanize_seconds(entry.get("weekly_remains_time")),
+            "intervalStatus": entry.get("current_interval_status"),
+            "weeklyStatus": entry.get("current_weekly_status"),
+        }
+    return out
 
 
 def main():
@@ -131,13 +202,18 @@ def main():
     general = plan["general"] or {}
     video = plan["video"] or {}
     record["minimaxTokenPlan"] = plan
-    record["minimaxSummary5h"] = str(general.get("intervalRemainingPct", ""))
-    record["minimaxSummaryWeekly"] = str(general.get("weeklyRemainingPct", ""))
+    def _pct_str(v):
+        try:
+            return f"{int(round(float(v)))}%" if v is not None else ""
+        except Exception:
+            return ""
+    record["minimaxSummary5h"] = _pct_str(general.get("intervalRemainingPct"))
+    record["minimaxSummaryWeekly"] = _pct_str(general.get("weeklyRemainingPct"))
     record["minimaxSummaryReset"] = (
-        f"5h: {general.get('intervalResetHuman', '—')} · "
-        f"wk: {general.get('weeklyResetHuman', '—')}"
+        f"5h: {general.get('intervalResetHuman') or '—'} · "
+        f"wk: {general.get('weeklyResetHuman') or '—'}"
     )
-    record["minimaxFetchedAt"] = raw.get("fetchedAt", "") if isinstance(raw, dict) else ""
+    record["minimaxFetchedAt"] = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
 
     # If either window is "unlimited" (weekly pct == 100 with no cap),
     # the panel renders it as "∞ Unlimited" via mmWeeklyIsUnlimited.

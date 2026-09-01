@@ -399,25 +399,71 @@ Panel {
 
   // Fraction (0..1) of the most-urgent rate-limit interval used.
   // Looks at the shortest available interval (5h, daily — never weekly).
+  // The ring's "percent filled" comes from each provider's authoritative
+  // source. Omarchy's default collectors (claude, codex, fireworks) all
+  // write  with {label, percent (0..1), resetsAt, title} —
+  // Anthropic's OAuth usage endpoint, OpenAI's rateLimit/read RPC, etc.
+  // each publish the same shape. My custom collectors write the same shape
+  // (or  for prepaid accounts like Fireworks). The most urgent
+  // entry wins so a tight 5-hour limit outranks an easy weekly one.
+  //
+  // Source-of-truth per provider:
+  //   hermes, openclaw: connection ring — no token usage, ring is
+  //                     "gateway running" or "gateway stopped"
+  //   minimax:          minimaxTokenPlan.general.intervalRemainingPct
+  //                     (5-hour window from /v1/token_plan/remains)
+  //   grok:             limits[] from xAI /v1/api-key per-resource
+  //   gemini:           limits[] from Google Generative Language API
+  //   claude, codex,    limits[] written by omarchy-core collectors
+  //   fireworks, omp,
+  //   opencode, pi,
+  //   copilot, crush:   limits[] or balance{} (prepaid)
+  //
+  // Any provider whose collector never produced real data stays empty
+  // (return 0), so the dock never shows a "full ring" by default.
   function providerIntervalFraction(idx) {
     if (!providerList[idx]) return 0;
     var p = providerList[idx];
-    var usedPercents = [];
-    if (p.minimaxTokenPlan && p.minimaxTokenPlan.general && p.minimaxTokenPlan.general.intervalRemainingPct !== undefined) {
-      usedPercents.push(1 - p.minimaxTokenPlan.general.intervalRemainingPct / 100);
+    var id = String(p.providerId || "");
+
+    // Hermes and OpenClaw have no token-usage: their ring is a connection
+    // indicator. Full when the gateway is active, empty when stopped.
+    if (id === "hermes" || id === "openclaw") {
+      return (p.gatewayState === "active" || p.ready === true) ? 1 : 0;
     }
-    if (p.intervalRemainingPct !== undefined) {
-      usedPercents.push(1 - p.intervalRemainingPct / 100);
+
+    // MiniMax writes a bespoke shape (the omarchy-core pattern didn't exist
+    // when the MiniMax collector was written). Convert remaining% to used%.
+    if (id === "minimax") {
+      if (p.minimaxTokenPlan && p.minimaxTokenPlan.general
+          && typeof p.minimaxTokenPlan.general.intervalRemainingPct === "number") {
+        return Math.max(0, Math.min(1,
+          1 - p.minimaxTokenPlan.general.intervalRemainingPct / 100));
+      }
+      return 0;
     }
-    if (p.dailyRemainingPct !== undefined) {
-      usedPercents.push(1 - p.dailyRemainingPct / 100);
+
+    // Omarchy-core collectors (claude, codex, fireworks, ...) write
+    // limits[] with {percent: 0..1, label, resetsAt, title}. The most
+    // urgent entry fills the ring.
+    if (Array.isArray(p.limits) && p.limits.length > 0) {
+      var maxPct = 0;
+      for (var i = 0; i < p.limits.length; i++) {
+        var l = p.limits[i];
+        if (l && typeof l.percent === "number" && isFinite(l.percent)) {
+          maxPct = Math.max(maxPct, l.percent);
+        }
+      }
+      return Math.max(0, Math.min(1, maxPct));
     }
-    if (usedPercents.length > 0) {
-      return Math.max.apply(null, usedPercents);
+
+    // Prepaid credits (e.g. Fireworks): derive a 0..1 fraction from
+    // balance.remaining / balance.funded.
+    if (p.balance && p.balance.funded > 0) {
+      return Math.max(0, Math.min(1, 1 - p.balance.remaining / p.balance.funded));
     }
-    // No token-usage data — fall back to connection state.
-    // Hermes's ring is a connection ring (full when gateway active), not a usage ring.
-    if (p.gatewayState === "active" || p.ready === true) return 1;
+
+    // No token-usage data, no balance: ring stays empty.
     return 0;
   }
 
