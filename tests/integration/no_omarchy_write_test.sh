@@ -54,6 +54,30 @@ else
 fi
 
 echo
+echo "=== Verify plugin sweeper lives at ~/.local/share/... ==="
+if grep -nE 'DATA_DIR.*XDG_DATA_HOME.*omarchy/agent-providers' "$ROOT/plugin/drivers/omarchy-sweeper" >/dev/null; then
+    echo "  PASS: plugin/drivers/omarchy-sweeper uses ~/.local/share/omarchy/agent-providers/"
+else
+    echo "  FAIL: plugin/drivers/omarchy-sweeper does not use ~/.local/share/omarchy/agent-providers/"
+    exit 1
+fi
+
+echo
+echo "=== Verify plugin sweeper timer lives at ~/.config/systemd/user/ (not /etc/systemd) ==="
+if grep -nE 'HOME.*systemd/user|systemd/user.*HOME' "$ROOT/install.sh" >/dev/null || \
+   grep -nE 'SYSTEMD_USER_DIR=' "$ROOT/install.sh" >/dev/null; then
+    echo "  PASS: install.sh writes timer to ~/.config/systemd/user (user-owned)"
+else
+    echo "  FAIL: install.sh does not write the timer to ~/.config/systemd/user"
+    exit 1
+fi
+if grep -nE '/etc/systemd' "$ROOT/install.sh" >/dev/null; then
+    echo "  FAIL: install.sh references /etc/systemd (system path; should be user-only)"
+    exit 1
+fi
+echo "  PASS: install.sh does not reference /etc/systemd"
+
+echo
 echo "=== Re-verify SHA-256 has not drifted during this test ==="
 ENDSTATE=$(sha256sum /usr/bin/omarchy-agent-usage-* /usr/share/omarchy/shell/plugins/agents/*.qml /usr/share/omarchy/shell/plugins/agents/*.json 2>/dev/null | sort)
 if [ "$BASELINE" = "$ENDSTATE" ]; then

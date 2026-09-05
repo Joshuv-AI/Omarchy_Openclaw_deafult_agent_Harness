@@ -1,0 +1,14 @@
+[Unit]
+Description=My Agents — refresh timer (15 min, hard floor 5 min)
+Documentation=https://github.com/Joshuv-AI/Omarchy_modified_agent_dock_icon-OC_Hermes_harness
+
+[Timer]
+# Run 1 minute after boot, then every 15 minutes thereafter.
+OnBootSec=1min
+OnUnitActiveSec=15min
+AccuracySec=1min
+Persistent=false
+Unit=omarchy-agent-sweeper.service
+
+[Install]
+WantedBy=default.target

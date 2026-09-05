@@ -17,9 +17,13 @@ PanelWindow {
     // Selected provider id (first-click selects; refresh is via the button below).
     property string selectedProviderId: ""
 
-    // Refresh cooldown state. Per-provider cooldown; product policy:
-    //   default 15 minutes, hard floor 5 minutes.
+    // Per-provider last-refresh timestamp (ms epoch). Drives the cooldown gate
+    // and the "Refresh (Nm ago)" label.
     property var cooldownState: ({})
+    // Per-provider last-probe result text from the driver, surfaced in the panel.
+    property var lastProbeResult: ({})
+    // True while a subprocess is running for the selected provider.
+    property bool refreshInFlight: false
 
     // Hover affordance: a translucent background highlight on hover.
     Rectangle {
@@ -30,15 +34,11 @@ PanelWindow {
         Behavior on opacity { NumberAnimation { duration: 120 } }
     }
 
-    // Selected provider panel body. Shows tier-aware rendering per
-    // § 7.3 of the decision document. Ring fill = remaining / 100 for
-    // quota providers. Label = `Remaining: <percent>`.
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 16
         spacing: 12
 
-        // Header: provider name + honest status label. No env-var names.
         Text {
             id: header
             text: panel.selectedProviderId
@@ -48,23 +48,27 @@ PanelWindow {
             font.pixelSize: 16
         }
 
-        // Tier-aware body. Each tier renders differently:
-        //   remaining quota → ring + `Remaining: <percent>`
-        //   balance         → `Balance: <amount> <currency>`
-        //   capacity        → `Capacity: <model> RPM <N> ...`
-        //   connection      → colored dot + `Connection valid/rejected`
-        //   gateway         → colored dot + `Gateway active/stopped/unknown`
-        //   local history   → sparkline + `History: <N> tokens today`
-        //   generic detected→ labeled card + honest status
-        //   unavailable     → labeled card + reason
+        // Tier-aware body. Rendered by the QML adapter layer. The text below
+        // shows the most recent probe result (last error message from the
+        // driver, sanitized).
+        Text {
+            id: probeStatusText
+            visible: panel.refreshInFlight || (panel.lastProbeResult[panel.selectedProviderId] || "").length > 0
+            text: panel.refreshInFlight
+                  ? "Refreshing…"
+                  : ("Last probe: " + (panel.lastProbeResult[panel.selectedProviderId] || ""))
+            font.pixelSize: 11
+            color: "#999999"
+            wrapMode: Text.Wrap
+        }
+
         Item {
             id: body
             Layout.fillWidth: true
             Layout.fillHeight: true
         }
 
-        // Refresh button — labeled, opt-in. Disabled if remote probe is
-        // disabled in setup. Calls the user-owned driver via Quickshell.Io.Process.
+        // Refresh button + Enable-probe button.
         RowLayout {
             spacing: 8
 
@@ -84,7 +88,60 @@ PanelWindow {
         }
     }
 
-    // Hover affordance: visible background highlight on the panel itself.
+    // Quickshell.Io.Process for the user-owned driver. Created on demand when
+    // the user clicks Refresh. We pass `--force` so the user explicitly opts
+    // out of the cooldown by clicking — the panel's own cooldown gate still
+    // refuses double-clicks faster than 5 minutes (the driver's hard floor).
+    property var refreshProc: null
+
+    function refreshSelected() {
+        if (!panel.selectedProviderId) return;
+        if (panel.refreshInFlight) return;
+        var last = panel.cooldownState[panel.selectedProviderId] || 0;
+        var cooldownMs = 900 * 1000;   // 15 min default
+        var floorMs = 300 * 1000;      // 5 min hard floor
+        if (Date.now() - last < cooldownMs) {
+            // Inside cooldown — silently ignore (button is also disabled).
+            return;
+        }
+        panel.refreshInFlight = true;
+        var pid = panel.selectedProviderId;
+        // Build the command line. Driver path is hardcoded; this is a
+        // user-owned path, not a system path. No shell — args are passed
+        // as a separate list so we don't have to escape anything.
+        var driverPath = Quickshell.env("HOME") + "/.local/share/omarchy/agent-providers/omarchy-refresh";
+        var args = [driverPath, pid, "--force"];
+        // Tear down any previous process before starting a new one.
+        if (panel.refreshProc) {
+            try { panel.refreshProc.destroy(); } catch (_) {}
+            panel.refreshProc = null;
+        }
+        var proc = Qt.createQmlObject('import Quickshell.Io; Process { }', panel, "refreshProc_" + Date.now());
+        proc.command = args;
+        proc.workingDirectory = Quickshell.env("HOME");
+        // On exit: update last-probe state and reset in-flight flag.
+        proc.exited.connect(function(exitCode) {
+            panel.refreshInFlight = false;
+            panel.cooldownState[pid] = Date.now();
+            panel.lastProbeResult[pid] = exitCode === 0
+                ? "ok"
+                : (exitCode === 2 ? "configuration missing"
+                  : (exitCode === 3 ? "remote endpoint rejected"
+                    : (exitCode === 4 ? "network unreachable"
+                      : (exitCode === 5 ? "provider not recognized"
+                        : (exitCode === 6 ? "cooldown override required" : ("error exit " + exitCode))))));
+            // Refresh the panel's data model by bumping the adapter.
+            if (typeof refreshAdapterModel === "function") {
+                refreshAdapterModel();
+            }
+            proc.destroy();
+            if (panel.refreshProc === proc) panel.refreshProc = null;
+        });
+        panel.refreshProc = proc;
+        proc.start();
+    }
+
+    // MouseArea hover affordance + first-click selection.
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true
@@ -93,9 +150,6 @@ PanelWindow {
         onExited:  hoverHighlight.opacity = 0
         onClicked: {
             if (!panel.selectedProviderId) {
-                // First click in an unselected panel selects the first
-                // detected provider. Subsequent clicks inside the panel
-                // do not refresh — only the Refresh button does.
                 if (root.providersModel && root.providersModel.length > 0) {
                     panel.selectedProviderId = root.providersModel[0].id;
                 }
@@ -114,6 +168,7 @@ PanelWindow {
     }
 
     function refreshButtonLabel() {
+        if (panel.refreshInFlight) return "Refreshing…";
         var last = panel.cooldownState[panel.selectedProviderId];
         if (!last) return "Refresh";
         var ageSec = Math.floor((Date.now() - last) / 1000);
@@ -123,7 +178,8 @@ PanelWindow {
 
     function refreshButtonEnabled() {
         return remoteProbeEnabledForSelected()
-            && panel.selectedProviderId.length > 0;
+            && panel.selectedProviderId.length > 0
+            && !panel.refreshInFlight;
     }
 
     function remoteProbeEnabledForSelected() {
@@ -135,23 +191,15 @@ PanelWindow {
         return false;
     }
 
-    function refreshSelected() {
-        if (!panel.selectedProviderId) return;
-        // Cooldown gate: refuse refreshes inside the cooldown window.
-        var last = panel.cooldownState[panel.selectedProviderId] || 0;
-        var cooldownMs = 900 * 1000;  // 15 min default; user-configurable
-        var floorMs = 300 * 1000;     // 5 min hard floor
-        if (Date.now() - last < cooldownMs) return;
-        // Driver invocation is delegated to the QML adapter layer; we
-        // don't shell out from here to keep the panel pure-render.
-        panel.cooldownState[panel.selectedProviderId] = Date.now();
-    }
-
     function openSetup() {
-        // Setup view lives in plugin/qml/SetupView.qml. Opens in a separate
-        // PanelWindow so the main popup stays focused.
         setupView.show();
     }
+
+    // The adapter's refresh callback — bound by the parent (Main.qml) so the
+    // panel can request a model reload after a successful probe. If not bound,
+    // the panel still updates its own state; the next detection poll (60s)
+    // will pick up the new on-disk JSON.
+    property var refreshAdapterModel: null
 
     PanelWindow {
         id: setupView

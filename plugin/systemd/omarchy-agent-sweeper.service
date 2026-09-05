@@ -1,0 +1,13 @@
+[Unit]
+Description=My Agents — refresh every detected provider (user-owned sweeper)
+Documentation=https://github.com/Joshuv-AI/Omarchy_modified_agent_dock_icon-OC_Hermes_harness
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/share/omarchy/agent-providers/omarchy-sweeper
+StandardOutput=append:%h/.cache/omarchy/agent-providers/sweeper.log
+StandardError=append:%h/.cache/omarchy/agent-providers/sweeper.log
+Environment=OMARCHY_AGENTS_COOLDOWN_SECONDS=900
+Environment=OMARCHY_AGENTS_COOLDOWN_FLOOR_SECONDS=300
+Nice=10

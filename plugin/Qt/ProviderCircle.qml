@@ -1,7 +1,10 @@
 // ProviderCircle.qml — single dock icon. Tier-aware rendering.
-// Ring fill = remaining / 100 (full = more allowance remains). Stale
-// telemetry desaturates the ring. Hover affordance is via opacity
-// change. Click selects the provider (first-click behavior, not refresh).
+// Ring fill = remaining / 100 (full = more allowance remains).
+// STALE TELEMETRY DOES NOT DRAW A CONSUMER FILL ARC — a stale ring
+// renders only a desaturated gray "no fresh data" outline. Stale values
+// are NEVER rendered as fresh quota fills, even when desaturated, because
+// a stale percentage could be wildly wrong. Click selects the provider
+// (first-click behavior, not refresh).
 
 import QtQuick
 import QtQuick.Shapes
@@ -19,15 +22,14 @@ Item {
     property bool showInDock: false
     property string ringLabel: ""
     property real ringFill: 0.0     // 0..1
-    property string tier: "unavailable" // remainingQuota | balance | capacity | connection | gateway | localHistory | genericDetected | unavailable
+    property string tier: "unavailable"
     property bool isStale: false
     property bool enabled: false
 
-    // Invisible if not detected or disabled. We use `visible: false`
-    // rather than `opacity: 0` so the dock skips layout entirely.
+    // Invisible if not detected or disabled.
     visible: showInDock && enabled
 
-    // Ring color by tier. Distinct visual grammar per category.
+    // Ring color by tier.
     property color ringColor: {
         switch (tier) {
             case "remainingQuota": return "#22cc88";  // green
@@ -42,13 +44,19 @@ Item {
         }
     }
 
-    // Stale visual treatment: desaturate the ring. The icon stays, the
-    // user can see it's stale; the value cannot be mistaken for fresh.
-    property color effectiveRingColor: isStale
-        ? Qt.hsla(ringColor.hslHue, ringColor.hslSaturation * 0.3, ringColor.hslLightness, 0.5)
-        : ringColor
+    // Stale visual treatment: when isStale is true and the tier is
+    // remainingQuota, balance, capacity, connection, or gateway — we do
+    // NOT draw the consumer fill arc. We draw only a desaturated gray
+    // "no fresh data" outline plus a small badge dot. The user can see
+    // the icon exists but cannot mistake stale for fresh.
+    property bool suppressFill: isStale && (
+        tier === "remainingQuota" ||
+        tier === "balance" ||
+        tier === "capacity" ||
+        tier === "connection" ||
+        tier === "gateway"
+    )
 
-    // Hover affordance: opacity lift on hover.
     property real hoverOpacity: 1.0
     Behavior on hoverOpacity { NumberAnimation { duration: 120 } }
 
@@ -59,24 +67,22 @@ Item {
         onEntered: circle.hoverOpacity = 1.15
         onExited:  circle.hoverOpacity = 1.0
         onClicked: {
-            // First click selects. Refresh is via the labeled button
-            // inside Panel.qml — not via a second-click timing trick.
             panelRoot.selectedProviderId = circle.providerId;
         }
     }
 
-    // Ring (Shape with PathArc). Stale = desaturated. fill = ringFill.
     Shape {
         anchors.fill: parent
         antialiasing: true
 
+        // Background ring outline (always visible — identifies the slot).
         ShapePath {
-            strokeColor: circle.effectiveRingColor
-            strokeWidth: 3
+            strokeColor: suppressFill ? "#666666" : circle.ringColor
+            strokeWidth: 2
             fillColor: "transparent"
             capStyle: ShapePath.RoundCap
+            opacity: circle.suppressFill ? 0.4 : 0.25
 
-            // Background ring (full circle, low alpha)
             PathAngleArc {
                 centerX: circle.width / 2
                 centerY: circle.height / 2
@@ -86,8 +92,11 @@ Item {
             }
         }
 
+        // Consumer fill arc — only drawn when data is fresh AND tier
+        // supports it. Stale data shows only the outline above.
         ShapePath {
-            strokeColor: circle.effectiveRingColor
+            visible: !circle.suppressFill
+            strokeColor: circle.ringColor
             strokeWidth: 3
             fillColor: "transparent"
             capStyle: ShapePath.RoundCap
@@ -100,15 +109,30 @@ Item {
                 sweepAngle: circle.ringFill * 360
             }
         }
+
+        // Stale badge — small dot at the top-right indicating "no fresh
+        // data" without claiming a fill amount.
+        ShapePath {
+            visible: circle.suppressFill
+            strokeColor: "transparent"
+            fillColor: "#cc4444"
+
+            PathMove { x: circle.width - 6; y: 6 }
+            PathArc {
+                x: circle.width - 6; y: 6
+                radiusX: 3; radiusY: 3
+                direction: PathArc.Clockwise
+            }
+        }
     }
 
-    // Center icon: provider name first letter, opacity modulated by hover.
+    // Center icon: provider name first letter.
     Text {
         anchors.centerIn: parent
         text: circle.displayName.length > 0 ? circle.displayName.charAt(0).toUpperCase() : "?"
         font.pixelSize: 12
         font.bold: true
-        color: circle.effectiveRingColor
+        color: circle.suppressFill ? "#888888" : circle.ringColor
         opacity: circle.hoverOpacity >= 1.1 ? 1.0 : 0.85
     }
 }

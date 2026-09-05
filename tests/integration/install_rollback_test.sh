@@ -38,8 +38,6 @@ echo "  PASS: install.sh does not write to /usr/bin/"
 
 echo
 echo "=== install.sh: NO sudo invocations ==="
-# Match only actual `sudo ` invocations (with a trailing space) — comments
-# saying "No sudo" or doc lines mentioning sudo are fine.
 if grep -nE '^\s*sudo\s+|[^A-Za-z0-9_]sudo\s+[A-Za-z]' "$ROOT/install.sh" >/dev/null; then
     echo "  FAIL: install.sh uses sudo"
     grep -nE '^\s*sudo\s+|[^A-Za-z0-9_]sudo\s+[A-Za-z]' "$ROOT/install.sh"

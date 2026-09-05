@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# omarchy-sweeper — user-owned background sweeper. Refreshes every
+# detected provider on the configured cooldown cadence. Lives at
+# ~/.local/share/omarchy/agent-providers/omarchy-sweeper after install.
+#
+# Unlike the manual `omarchy-refresh <id>` driver, this loops over
+# every provider and runs the user-owned collector directly. Each
+# invocation respects the cooldown gate in `omarchy-refresh`.
+#
+# Cron / systemd wiring is user-owned (systemd --user timer or user
+# crontab). Never touches /usr/share/omarchy/ or /usr/bin/.
+
+set -euo pipefail
+
+DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/agent-providers"
+USAGE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/agents/usage"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/agent-providers"
+mkdir -p "$DATA_DIR/collectors" "$CACHE_DIR" "$USAGE_DIR"
+
+# Provider list. Order: first-class providers that have user-owned
+# collectors. Generic-fallback providers are excluded — they only
+# render as labeled cards, never refresh.
+PROVIDERS=(openclaw hermes minimax kimi qwen fireworks grok gemini claude codex)
+
+now=$(date +%s)
+ok=0
+skipped=0
+errored=0
+
+log_line() {
+    printf '[%s] %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$1" >> "$CACHE_DIR/sweeper.log"
+}
+
+for pid in "${PROVIDERS[@]}"; do
+    collector="$DATA_DIR/collectors/$pid.py"
+    if [ ! -f "$collector" ]; then
+        collector="$DATA_DIR/collectors/$pid.sh"
+    fi
+    if [ ! -f "$collector" ]; then
+        log_line "skip $pid (no collector)"
+        skipped=$((skipped + 1))
+        continue
+    fi
+
+    # Cooldown gate per provider. State file is the same one written by
+    # omarchy-refresh; if lastProbeAt is within the configured cooldown,
+    # skip without invoking the collector.
+    state_file="$CACHE_DIR/$pid.state.json"
+    last_probe_at=0
+    cooldown_seconds="${OMARCHY_AGENTS_COOLDOWN_SECONDS:-900}"
+    cooldown_floor="${OMARCHY_AGENTS_COOLDOWN_FLOOR_SECONDS:-300}"
+    if [ "$cooldown_seconds" -lt "$cooldown_floor" ]; then
+        cooldown_seconds="$cooldown_floor"
+    fi
+    if [ -f "$state_file" ]; then
+        last_probe_at=$(grep -oE '"lastProbeAt":[0-9]+' "$state_file" | grep -oE '[0-9]+' || echo 0)
+    fi
+    age=$(( now - last_probe_at ))
+    if [ "$last_probe_at" -gt 0 ] && [ "$age" -lt "$cooldown_seconds" ]; then
+        log_line "skip $pid (cooldown $((cooldown_seconds - age))s remaining)"
+        skipped=$((skipped + 1))
+        continue
+    fi
+
+    # Run the collector directly (no env-var-name check — that's the
+    # driver's job. The collector handles missing config gracefully and
+    # writes a `ready: false` record with the appropriate error text).
+    if "$collector" 2>>"$CACHE_DIR/sweeper.log"; then
+        printf '{"provider":"%s","lastProbeAt":%d,"lastStatus":"ok","source":"sweeper"}\n' \
+            "$pid" "$now" > "$state_file"
+        log_line "ok $pid"
+        ok=$((ok + 1))
+    else
+        rc=$?
+        printf '{"provider":"%s","lastProbeAt":%d,"lastStatus":"error:%d","source":"sweeper"}\n' \
+            "$pid" "$now" "$rc" > "$state_file"
+        log_line "error $pid (exit $rc)"
+        errored=$((errored + 1))
+    fi
+done
+
+log_line "summary: ok=$ok skipped=$skipped errored=$errored"
