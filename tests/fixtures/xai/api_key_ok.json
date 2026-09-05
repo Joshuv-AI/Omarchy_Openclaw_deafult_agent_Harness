@@ -1,0 +1,40 @@
+{
+  "_fixture": true,
+  "_source": "docs/audit/xai_api_key.md",
+  "schema_minimal": {
+    "id": "string, identifier",
+    "name": "string, identifier",
+    "user_id": "string, identifier",
+    "api_key_blocked": "boolean, true if key is blocked",
+    "api_key_flags": "array of strings",
+    "usage": {
+      "total_tokens": "int, aggregate used (NOT remaining against a documented denominator)",
+      "time_period": "string, e.g. calendar_month",
+      "period_start": "ISO-8601 string",
+      "period_end": "ISO-8601 string"
+    },
+    "per_resource": [
+      {
+        "resource": "model id string",
+        "rpm": "int, capacity cap (NOT remaining)",
+        "rpd": "int, capacity cap",
+        "tpm": "int, capacity cap",
+        "tpd": "int, capacity cap"
+      }
+    ]
+  },
+  "id": "key-xxx",
+  "name": "default",
+  "user_id": "user-xxx",
+  "api_key_blocked": false,
+  "api_key_flags": [],
+  "usage": {
+    "total_tokens": 12345,
+    "time_period": "calendar_month",
+    "period_start": "2026-09-01T00:00:00Z",
+    "period_end": "2026-09-30T23:59:59Z"
+  },
+  "per_resource": [
+    { "resource": "grok-4", "rpm": 60, "rpd": 1000, "tpm": 60000, "tpd": 1000000 }
+  ]
+}

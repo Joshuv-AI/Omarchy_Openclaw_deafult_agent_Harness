@@ -1,0 +1,15 @@
+{
+  "_fixture": true,
+  "_source": "docs/audit/qwen_base_url.md",
+  "schema_minimal": {
+    "object": "list",
+    "data": [
+      { "id": "string, model id", "owned_by": "string" }
+    ]
+  },
+  "object": "list",
+  "data": [
+    { "id": "qwen-turbo", "object": "model", "created": 0, "owned_by": "alibaba" },
+    { "id": "qwen-plus",  "object": "model", "created": 0, "owned_by": "alibaba" }
+  ]
+}

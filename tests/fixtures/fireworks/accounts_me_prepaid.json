@@ -1,0 +1,16 @@
+{
+  "_fixture": true,
+  "_source": "docs/audit/fireworks_accounts_me.md",
+  "schema_minimal": {
+    "account_id": "string",
+    "accountBalance": "float USD, REMAINING monetary balance",
+    "creditLimit": "float USD, semantics per `type` value NOT audit-logged",
+    "currency": "string, e.g. USD",
+    "type": "PREPAID | POSTPAID"
+  },
+  "account_id": "acct-xxx",
+  "accountBalance": 12.34,
+  "creditLimit": 50.00,
+  "currency": "USD",
+  "type": "PREPAID"
+}

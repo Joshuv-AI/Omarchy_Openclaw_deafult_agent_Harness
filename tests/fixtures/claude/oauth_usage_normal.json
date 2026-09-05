@@ -1,0 +1,56 @@
+{
+  "_fixture": true,
+  "_source": "docs/audit/claude_oauth_usage.md",
+  "_shape": "normalized on-disk record (Omarchy collector output). The raw OAuth /usage response is normalized by omarchy-agent-usage-claude before this record is written.",
+  "schema_minimal": {
+    "limits": [
+      {
+        "label": "string, e.g. '5h window' or '7d window'",
+        "percent": "0..1 fraction, percent USED (NOT remaining). Ring fill = (100 - percent*100) / 100.",
+        "resetsAt": "ISO-8601 timestamp"
+      }
+    ],
+    "todayTotalTokens": "int",
+    "todayPrompts": "int",
+    "todaySessions": "int",
+    "modelUsage": "object<string, { inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens }>",
+    "activeDays": "int",
+    "activeDates": "array of YYYY-MM-DD strings",
+    "usageStatusText": "string"
+  },
+  "id": "claude",
+  "name": "Claude Code",
+  "schemaVersion": 1,
+  "ready": true,
+  "hasLocalStats": true,
+  "todayPrompts": 23,
+  "todaySessions": 4,
+  "todayTotalTokens": 102304,
+  "todayTokensByModel": { "claude-sonnet-4.5": 102304 },
+  "recentDays": [
+    { "date": "2026-08-29", "messageCount": 0 },
+    { "date": "2026-08-30", "messageCount": 0 },
+    { "date": "2026-08-31", "messageCount": 0 },
+    { "date": "2026-09-01", "messageCount": 0 },
+    { "date": "2026-09-02", "messageCount": 0 },
+    { "date": "2026-09-03", "messageCount": 0 },
+    { "date": "2026-09-04", "messageCount": 23 }
+  ],
+  "totalPrompts": 250,
+  "totalSessions": 18,
+  "activeDays": 3,
+  "activeDates": ["2026-08-29", "2026-09-01", "2026-09-04"],
+  "modelUsage": {
+    "claude-sonnet-4.5": {
+      "inputTokens": 12000, "outputTokens": 4000,
+      "cacheReadInputTokens": 80000, "cacheCreationInputTokens": 6304
+    }
+  },
+  "limits": [
+    { "label": "5h window", "percent": 0.125, "resetsAt": "2026-09-04T22:00:00Z" },
+    { "label": "7d window", "percent": 0.234, "resetsAt": "2026-09-08T00:00:00Z" }
+  ],
+  "tierLabel": "",
+  "usageStatusText": "auth via OAuth",
+  "updatedAt": "2026-09-04T22:00:00+00:00"
+}

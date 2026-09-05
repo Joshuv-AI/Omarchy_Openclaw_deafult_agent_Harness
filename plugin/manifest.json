@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "xensei.agents",
+  "name": "My Agents",
+  "version": "3.0.0",
+  "author": "OpenClaw for Omarchy contributors",
+  "license": "AGPL-3.0",
+  "homepage": "https://openclaw.io",
+  "minOmarchyVersion": "2026.08",
+  "description": "User-owned clone of omarchy.agents. Detected-only provider registry with first-class adapters and a generic detected-provider fallback. Tier-aware rendering: remaining quota, balance, capacity, connection, gateway, local history, or unavailable. Refresh opt-in. No package-owned Omarchy writes.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "My Agents",
+    "description": "Detected-only provider dock with tier-aware rendering and opt-in remote probes.",
+    "category": "AI",
+    "aliases": [
+      "agents",
+      "model-usage"
+    ],
+    "allowMultiple": false,
+    "defaults": {
+      "refreshIntervalSec": 60,
+      "remoteProbeDefault": false,
+      "cooldownSeconds": 900,
+      "cooldownFloorSeconds": 300,
+      "providers": {
+        "openclaw": { "enabled": true, "remoteProbe": false },
+        "hermes":   { "enabled": true, "remoteProbe": false },
+        "minimax":  { "enabled": true, "remoteProbe": false },
+        "kimi":    { "enabled": true, "remoteProbe": false },
+        "qwen":    { "enabled": true, "remoteProbe": false },
+        "claude":  { "enabled": true, "remoteProbe": false },
+        "codex":   { "enabled": true, "remoteProbe": false },
+        "fireworks":{ "enabled": true, "remoteProbe": false },
+        "grok":    { "enabled": false, "remoteProbe": false },
+        "gemini":  { "enabled": false, "remoteProbe": false }
+      }
+    },
+    "schema": [
+      { "key": "refreshIntervalSec",   "type": "integer", "label": "Refresh interval (seconds)", "min": 30, "max": 3600, "step": 30, "defaultValue": 60 },
+      { "key": "remoteProbeDefault",   "type": "boolean", "label": "Enable remote probes by default", "defaultValue": false },
+      { "key": "cooldownSeconds",      "type": "integer", "label": "Refresh cooldown (seconds)", "min": 300, "max": 86400, "defaultValue": 900 },
+      { "key": "cooldownFloorSeconds", "type": "integer", "label": "Cooldown hard floor (seconds)", "min": 300, "max": 86400, "defaultValue": 300 }
+    ]
+  }
+}

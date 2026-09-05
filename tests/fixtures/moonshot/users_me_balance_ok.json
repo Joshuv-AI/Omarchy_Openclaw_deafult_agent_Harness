@@ -1,0 +1,20 @@
+{
+  "_fixture": true,
+  "_source": "docs/audit/moonshot_users_me_balance.md",
+  "schema_minimal": {
+    "data": {
+      "available_balance": "float, monetary, remaining",
+      "cash_balance": "float, monetary, cash portion of remaining",
+      "voucher_balance": "float, monetary, voucher portion of remaining",
+      "currency": "string, currency code (e.g. CNY)"
+    }
+  },
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "available_balance": 12.34,
+    "cash_balance": 12.34,
+    "voucher_balance": 0.00,
+    "currency": "CNY"
+  }
+}

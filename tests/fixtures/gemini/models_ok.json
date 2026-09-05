@@ -1,0 +1,14 @@
+{
+  "_fixture": true,
+  "_source": "docs/audit/gemini_rate_limits.md",
+  "schema_minimal": {
+    "models": [
+      { "name": "string, model id", "version": "string", "displayName": "string" }
+    ],
+    "nextPageToken": "string or null"
+  },
+  "models": [
+    { "name": "models/gemini-2.0-flash", "version": "2.0", "displayName": "Gemini 2.0 Flash" }
+  ],
+  "nextPageToken": null
+}

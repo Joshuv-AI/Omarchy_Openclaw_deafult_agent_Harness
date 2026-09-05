@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# omarchy-refresh — user-owned refresh driver. Lives in
+# ~/.local/share/omarchy/agent-providers/ after install. Never uses
+# /usr/share/omarchy/, /usr/bin/, sudo, or system symlinks.
+#
+# Usage:
+#   omarchy-refresh <provider-id>             # single provider, with cooldown
+#   omarchy-refresh <provider-id> --force    # bypass cooldown (one-shot)
+#   omarchy-refresh --status <provider-id>   # show last probe + cooldown state
+#   omarchy-refresh <provider-id> --status   # alternate argument order
+#
+# Exit codes:
+#   0 — probe succeeded (or skipped due to cooldown)
+#   2 — configuration missing for this provider
+#   3 — remote endpoint rejected (4xx other than 401/403)
+#   4 — remote endpoint unreachable (network/timeout/DNS)
+#   5 — provider id not recognized
+#   6 — cooldown active (no --force)
+#
+# Cooldown is a PRODUCT POLICY: default 15 min, hard floor 5 min.
+# Consult provider documentation for actual rate limits.
+
+set -euo pipefail
+
+# Argument parsing. Accept either order:
+#   omarchy-refresh <provider-id> [--force|--status]
+#   omarchy-refresh --status <provider-id>
+PROVIDER=""
+FLAG=""
+for arg in "$@"; do
+    case "$arg" in
+        --force|--status) FLAG="$arg" ;;
+        --*) echo "omarchy-refresh: unknown flag '$arg'" >&2; exit 64 ;;
+        *)  PROVIDER="$arg" ;;
+    esac
+done
+
+COOLDOWN_SECONDS="${OMARCHY_AGENTS_COOLDOWN_SECONDS:-900}"
+COOLDOWN_FLOOR_SECONDS="${OMARCHY_AGENTS_COOLDOWN_FLOOR_SECONDS:-300}"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/agent-providers"
+# Driver and collectors live under XDG_DATA_HOME (matches install.sh).
+DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/agent-providers"
+# Usage JSON lives under XDG_STATE_HOME (existing Omarchy path).
+USAGE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/agents/usage"
+
+mkdir -p "$CACHE_DIR" "$DATA_DIR" "$USAGE_DIR"
+
+if [ -z "$PROVIDER" ]; then
+    echo "usage: omarchy-refresh <provider-id> [--force|--status]" >&2
+    exit 64
+fi
+
+# Resolve collector path. The collector for each provider lives in
+# ~/.local/share/omarchy/agent-providers/collectors/<id>.py or .sh.
+COLLECTORS_DIR="$DATA_DIR/collectors"
+COLLECTOR="$COLLECTORS_DIR/$PROVIDER.py"
+if [ ! -f "$COLLECTOR" ]; then
+    COLLECTOR="$COLLECTORS_DIR/$PROVIDER.sh"
+fi
+if [ ! -f "$COLLECTOR" ]; then
+    echo "omarchy-refresh: unknown provider '$PROVIDER' (no collector at $COLLECTORS_DIR/)" >&2
+    exit 5
+fi
+
+# --status: print last probe + cooldown state, then exit.
+if [ "$FLAG" = "--status" ]; then
+    state_file="$CACHE_DIR/$PROVIDER.state.json"
+    if [ -f "$state_file" ]; then
+        cat "$state_file"
+        exit 0
+    fi
+    printf '{"provider":"%s","lastProbeAt":0,"lastStatus":"never"}\n' "$PROVIDER"
+    exit 0
+fi
+
+# Cooldown gate. Floor is enforced regardless of user setting.
+if [ "$COOLDOWN_SECONDS" -lt "$COOLDOWN_FLOOR_SECONDS" ]; then
+    COOLDOWN_SECONDS="$COOLDOWN_FLOOR_SECONDS"
+fi
+state_file="$CACHE_DIR/$PROVIDER.state.json"
+last_probe_at=0
+if [ -f "$state_file" ]; then
+    last_probe_at=$(grep -oE '"lastProbeAt":[0-9]+' "$state_file" | grep -oE '[0-9]+' || echo 0)
+fi
+now=$(date +%s)
+age=$(( now - last_probe_at ))
+if [ "$FLAG" != "--force" ] && [ "$last_probe_at" -gt 0 ] && [ "$age" -lt "$COOLDOWN_SECONDS" ]; then
+    remaining=$(( COOLDOWN_SECONDS - age ))
+    echo "omarchy-refresh: cooldown active for $PROVIDER (${remaining}s remaining). Use --force to override." >&2
+    exit 6
+fi
+
+# Configuration-missing gate. We check env var name presence only —
+# never the value. If the env var name is bound, we let the collector
+# run; if not, we exit 2 with a non-secret label.
+case "$PROVIDER" in
+    minimax)
+        if [ -z "${MINIMAX_API_KEY+x}" ]; then
+            printf '{"provider":"%s","lastProbeAt":%d,"lastStatus":"missing-config"}\n' "$PROVIDER" "$now" > "$state_file"
+            echo "omarchy-refresh: $PROVIDER configuration missing (env var name not bound)" >&2
+            exit 2
+        fi
+        ;;
+    kimi)
+        if [ -z "${MOONSHOT_API_KEY+x}" ] && [ -z "${KIMI_API_KEY+x}" ]; then
+            printf '{"provider":"%s","lastProbeAt":%d,"lastStatus":"missing-config"}\n' "$PROVIDER" "$now" > "$state_file"
+            echo "omarchy-refresh: $PROVIDER configuration missing (env var name not bound)" >&2
+            exit 2
+        fi
+        ;;
+    qwen)
+        if [ -z "${DASHSCOPE_API_KEY+x}" ]; then
+            printf '{"provider":"%s","lastProbeAt":%d,"lastStatus":"missing-config"}\n' "$PROVIDER" "$now" > "$state_file"
+            echo "omarchy-refresh: $PROVIDER configuration missing (env var name not bound)" >&2
+            exit 2
+        fi
+        ;;
+    grok)
+        if [ -z "${XAI_API_KEY+x}" ]; then
+            printf '{"provider":"%s","lastProbeAt":%d,"lastStatus":"missing-config"}\n' "$PROVIDER" "$now" > "$state_file"
+            echo "omarchy-refresh: $PROVIDER configuration missing (env var name not bound)" >&2
+            exit 2
+        fi
+        ;;
+    gemini)
+        if [ -z "${GEMINI_API_KEY+x}" ] && [ -z "${GOOGLE_API_KEY+x}" ]; then
+            printf '{"provider":"%s","lastProbeAt":%d,"lastStatus":"missing-config"}\n' "$PROVIDER" "$now" > "$state_file"
+            echo "omarchy-refresh: $PROVIDER configuration missing (env var name not bound)" >&2
+            exit 2
+        fi
+        ;;
+    hermes|openclaw|claude|codex|fireworks)
+        # No env var required for these. They use local files or local CLI.
+        ;;
+    *)
+        echo "omarchy-refresh: provider '$PROVIDER' has no env-var-binding rule" >&2
+        ;;
+esac
+
+# Run the collector. The collector writes the usage JSON. We capture
+# stdout, run with timeout, and update the state file based on exit.
+set +e
+"$COLLECTOR" "$@"
+rc=$?
+set -e
+
+last_status="ok"
+if [ "$rc" -ne 0 ]; then
+    last_status="error:$rc"
+fi
+printf '{"provider":"%s","lastProbeAt":%d,"lastStatus":"%s","lastExit":%d}\n' \
+    "$PROVIDER" "$now" "$last_status" "$rc" > "$state_file"
+
+exit $rc

@@ -6,3 +6,6 @@ __pycache__/
 .idea/
 .vscode/
 .env
+*.bak.*
+/tests/integration/baseline.sha256
+/tmp/

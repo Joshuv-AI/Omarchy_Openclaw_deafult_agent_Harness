@@ -1,0 +1,31 @@
+{
+  "_fixture": true,
+  "_source": "docs/audit/hermes_status.md",
+  "_captured_from": "local `hermes status` invocation; redacted",
+  "_shape": "normalized on-disk record (collector output). The raw `hermes status` text is parsed by plugin/collectors/hermes.sh and the `gateway:` field is mapped to `gatewayState`.",
+  "schema_minimal": {
+    "gatewayState": "running | stopped | unknown",
+    "version": "semver (Release 1.0 DEFERRED — not rendered)",
+    "agent": "running | stopped (Release 1.0 DEFERRED — not rendered)",
+    "auth": "authenticated | required | unknown (Release 1.0 DEFERRED — not rendered)",
+    "platform": "hostname string (Release 1.0 DEFERRED — not rendered)",
+    "updatedAt": "ISO-8601 timestamp"
+  },
+  "id": "hermes",
+  "name": "Hermes",
+  "schemaVersion": 1,
+  "provider": "hermes",
+  "ready": true,
+  "installed": true,
+  "version": "0.4.2",
+  "activeModel": "",
+  "gatewayState": "running",
+  "agent": "running",
+  "auth": "authenticated",
+  "platform": "redacted-hostname",
+  "nodeVersion": "",
+  "hermesPid": "",
+  "hermesUptime": "",
+  "discordStatus": "unknown",
+  "updatedAt": "2026-09-04T22:00:00+00:00"
+}

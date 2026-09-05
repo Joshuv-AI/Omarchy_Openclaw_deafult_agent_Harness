@@ -1,0 +1,20 @@
+{
+  "_fixture": true,
+  "_source": "docs/audit/hermes_status.md",
+  "_captured_from": "local `hermes status` invocation; redacted",
+  "_shape": "normalized on-disk record (collector output).",
+  "schema_minimal": {
+    "gatewayState": "running | stopped | unknown",
+    "updatedAt": "ISO-8601 timestamp"
+  },
+  "id": "hermes",
+  "name": "Hermes",
+  "schemaVersion": 1,
+  "provider": "hermes",
+  "ready": false,
+  "installed": true,
+  "version": "",
+  "activeModel": "",
+  "gatewayState": "stopped",
+  "updatedAt": "2026-09-04T22:00:00+00:00"
+}

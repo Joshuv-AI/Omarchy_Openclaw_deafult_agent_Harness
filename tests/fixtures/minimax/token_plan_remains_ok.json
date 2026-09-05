@@ -1,0 +1,56 @@
+{
+  "_fixture": true,
+  "_source": "docs/audit/minimax_token_plan_remains.md",
+  "_shape": "normalized on-disk record (Omarchy collector output). The raw /v1/token_plan/remains response is normalized by omarchy-agent-usage-minimax before this record is written.",
+  "schema_minimal": {
+    "minimaxAvailable": "boolean",
+    "minimaxTokenPlan": {
+      "general": {
+        "intervalRemainingPct": "0..100, REMAINING (NOT used). Ring fill = remaining / 100.",
+        "weeklyRemainingPct": "0..100, REMAINING",
+        "intervalResetHuman": "human-readable duration string (e.g. '1h 8m')",
+        "weeklyResetHuman": "human-readable duration string"
+      },
+      "video": {
+        "intervalRemainingPct": "0..100, REMAINING",
+        "weeklyRemainingPct": "0..100, REMAINING"
+      }
+    },
+    "minimaxSummary5h": "string, e.g. '96%'",
+    "minimaxSummaryWeekly": "string, e.g. '100%'",
+    "minimaxFetchedAt": "ISO-8601 timestamp"
+  },
+  "id": "minimax",
+  "name": "MiniMax",
+  "schemaVersion": 1,
+  "provider": "minimax",
+  "ready": true,
+  "installed": true,
+  "version": "",
+  "activeModel": "",
+  "minimaxAvailable": true,
+  "minimaxError": "",
+  "minimaxTokenPlan": {
+    "general": {
+      "intervalRemainingPct": 96.0,
+      "weeklyRemainingPct": 100.0,
+      "intervalResetHuman": "3h 15m",
+      "weeklyResetHuman": "5d 12h",
+      "intervalStatus": 1,
+      "weeklyStatus": 3
+    },
+    "video": {
+      "intervalRemainingPct": 100.0,
+      "weeklyRemainingPct": 100.0,
+      "intervalResetHuman": "3h 15m",
+      "weeklyResetHuman": "5d 12h",
+      "intervalStatus": 3,
+      "weeklyStatus": 3
+    }
+  },
+  "minimaxSummary5h": "96%",
+  "minimaxSummaryWeekly": "100%",
+  "minimaxSummaryReset": "5h: 3h 15m · wk: 5d 12h",
+  "minimaxFetchedAt": "2026-09-04T22:00:00+00:00",
+  "authHelpText": ""
+}

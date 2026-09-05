@@ -1,0 +1,51 @@
+{
+  "_fixture": true,
+  "_source": "docs/audit/codex_local_scan.md",
+  "_shape": "normalized on-disk record (Omarchy collector output). The raw ~/.codex/sessions/*.jsonl scan is normalized by omarchy-agent-usage-codex before this record is written.",
+  "schema_minimal": {
+    "todayTotalTokens": "int",
+    "todayTokensByModel": "object<string, int>",
+    "modelUsage": "object<string, { inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens }>",
+    "limits": [
+      {
+        "label": "string",
+        "percent": "0..1 fraction. DIRECTION UNKNOWN from public OpenAI Codex docs; NOT specified by the collector source. Render as labeled value, NOT ring fill.",
+        "resetsAt": "ISO-8601 timestamp"
+      }
+    ],
+    "tierLabel": "string",
+    "usageStatusText": "string"
+  },
+  "id": "codex",
+  "name": "Codex",
+  "schemaVersion": 1,
+  "ready": true,
+  "hasLocalStats": true,
+  "todayPrompts": 46,
+  "todaySessions": 2,
+  "todayTotalTokens": 4421022,
+  "todayTokensByModel": { "gpt-5.6-terra": 4320254, "codex-auto-review": 100768 },
+  "recentDays": [
+    { "date": "2026-08-29", "messageCount": 65488 },
+    { "date": "2026-08-30", "messageCount": 0 },
+    { "date": "2026-08-31", "messageCount": 0 },
+    { "date": "2026-09-01", "messageCount": 164230 },
+    { "date": "2026-09-02", "messageCount": 0 },
+    { "date": "2026-09-03", "messageCount": 0 },
+    { "date": "2026-09-04", "messageCount": 4421022 }
+  ],
+  "totalPrompts": 55,
+  "totalSessions": 6,
+  "activeDays": 3,
+  "activeDates": ["2026-08-29", "2026-09-01", "2026-09-04"],
+  "modelUsage": {
+    "gpt-5.6-terra": { "inputTokens": 242597, "outputTokens": 22959, "cacheReadInputTokens": 4284416, "cacheCreationInputTokens": 0 },
+    "codex-auto-review": { "inputTokens": 27059, "outputTokens": 749, "cacheReadInputTokens": 72960, "cacheCreationInputTokens": 0 }
+  },
+  "limits": [
+    { "label": "720h window", "percent": 0.85, "resetsAt": "2026-09-28T16:12:12+00:00" }
+  ],
+  "tierLabel": "free",
+  "usageStatusText": "auth via ChatGPT app",
+  "updatedAt": "2026-09-04T22:00:00+00:00"
+}
